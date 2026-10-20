@@ -1,6 +1,7 @@
 1. Start the simulator
-	Fisrt open the terminal in the root Group7-DeskSystem folder and run the following commands:
-
+	Fisrt open the terminal in the root Group7-DeskSystem folder and run the following commands: <br/>
+	
+	git submodule update --init --recursive (Only needs to run the first time) <br/>
 
 	cd wifi2ble-box-simulator <br/>
 	python simulator/main.py --port 8000
