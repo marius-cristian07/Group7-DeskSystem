@@ -19,3 +19,8 @@
 
 	Paste the link above in your browser and replace <api_key> with the key you copied in step 2 and <desk_id> with the id of the desk you want to get form the list.
 
+5. The server can also be started in HTTPS mode
+   python simulator/main.py --port 8443 --https --certfile config/cert.pem --keyfile config/key.pem
+
+   Ex with porst 8443
+
