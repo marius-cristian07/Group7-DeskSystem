@@ -2,7 +2,7 @@
 	Fisrt open the terminal in the root Group7-DeskSystem folder and run the following commands:
 
 
-	cd wifi2ble-box-simulator
+	cd wifi2ble-box-simulator <br/>
 	python simulator/main.py --port 8000
 
 2. Get an API key
