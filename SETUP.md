@@ -22,5 +22,5 @@
 5. The server can also be started in HTTPS mode
    python simulator/main.py --port 8443 --https --certfile config/cert.pem --keyfile config/key.pem
 
-   Ex with porst 8443
+   Ex with port 8443
 
