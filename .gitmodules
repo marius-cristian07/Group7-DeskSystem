@@ -1,0 +1,3 @@
+[submodule "wifi2ble-box-simulator"]
+	path = wifi2ble-box-simulator
+	url = https://source.coderefinery.org/sdm-edu/wifi2ble-box-simulator
