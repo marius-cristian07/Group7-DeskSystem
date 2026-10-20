@@ -1,0 +1,61 @@
+﻿{
+    "config": {
+        "name": "DESK 4486",
+        "manufacturer": "Desk-O-Matic Co."
+    },
+    "state": {
+        "position_mm": 1320,
+        "speed_mms": 0,
+        "status": "Normal",
+        "isPositionLost": false,
+        "isOverloadProtectionUp": false,
+        "isOverloadProtectionDown": false,
+        "isAntiCollision": false
+    },
+    "usage": {
+        "activationsCounter": 67,
+        "sitStandCounter": 18
+    },
+    "lastErrors": [
+        {
+            "time_s": 2695,
+            "errorCode": 93
+        },
+        {
+            "time_s": 2043,
+            "errorCode": 93
+        },
+        {
+            "time_s": 1928,
+            "errorCode": 93
+        },
+        {
+            "time_s": 1806,
+            "errorCode": 93
+        },
+        {
+            "time_s": 1003,
+            "errorCode": 93
+        },
+        {
+            "time_s": 869,
+            "errorCode": 93
+        },
+        {
+            "time_s": 847,
+            "errorCode": 93
+        },
+        {
+            "time_s": 718,
+            "errorCode": 93
+        },
+        {
+            "time_s": 666,
+            "errorCode": 93
+        },
+        {
+            "time_s": 604,
+            "errorCode": 93
+        }
+    ]
+}
