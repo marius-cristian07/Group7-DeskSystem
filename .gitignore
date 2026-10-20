@@ -427,3 +427,11 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Virtual environments
+.venv/
+venv/
+
+# Caches and packaging output
+.pytest_cache/
+*.egg-info/
