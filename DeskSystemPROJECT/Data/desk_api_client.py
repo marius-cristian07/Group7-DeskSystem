@@ -6,12 +6,32 @@ Purpose    : KAN-5 Retrieve and display current desk data from the WiFi2BLE simu
 
 import json
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 from urllib.request import urlopen
 
 
 class DeskAPIError(Exception):
     """A request or desk data validation failed."""
+
+
+
+def validate_config(base_url, api_key):
+    """Check the API URL and API key before sending a request."""
+
+    if not isinstance(base_url, str) or not base_url.strip():
+        raise DeskAPIError("Base URL cannot be empty")
+
+    try:
+        parsed_url = urlsplit(base_url)
+    except ValueError:
+        raise DeskAPIError("Invalid base URL") from None
+
+    if parsed_url.scheme not in ("http", "https") or not parsed_url.netloc:
+        raise DeskAPIError("Base URL must be a valid HTTP or HTTPS address")
+
+    if not isinstance(api_key, str) or not api_key.strip():
+        raise DeskAPIError("API key cannot be empty")
+
 
 
 def get_json(url, timeout=5):
@@ -36,6 +56,7 @@ def get_json(url, timeout=5):
 
 def get_desk_ids(base_url, api_key, timeout=5):
     """Retrieve and validate the available desk IDs."""
+    validate_config(base_url, api_key)
     url = f"{base_url.rstrip('/')}/api/v2/{quote(api_key, safe='')}/desks"
     desk_ids = get_json(url, timeout)
     if type(desk_ids) is not list or any(type(item) is not str for item in desk_ids):
@@ -88,8 +109,14 @@ def validate_desk(data, desk_id):
 
 def get_desk(base_url, api_key, desk_id, timeout=5):
     """Retrieve one current desk record through the simulator API."""
+
+    validate_config(base_url, api_key)
+
+    if not isinstance(desk_id, str) or not desk_id.strip():
+        raise DeskAPIError("Desk ID cannot be empty")
+
     url = (
         f"{base_url.rstrip('/')}/api/v2/{quote(api_key, safe='')}/desks/"
-        f"{quote(desk_id, safe='')}"
+        f"{quote(desk_id, safe=':')}"
     )
     return validate_desk(get_json(url, timeout), desk_id)
