@@ -353,6 +353,32 @@ paket-files/
 # Python Tools for Visual Studio (PTVS)
 **/__pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Python test, type-checker, and tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+htmlcov/
+
+# Python virtual environments and local environment files
+.venv/
+venv/
+env/
+ENV/
+.env
+.env.*
+!.env.example
+
+# Python packaging output
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
 
 # Cake - Uncomment if you are using it
 #tools/**
@@ -428,10 +454,9 @@ FodyWeavers.xsd
 *.msm
 *.msp
 
-# Virtual environments
-.venv/
-venv/
-
-# Caches and packaging output
-.pytest_cache/
-*.egg-info/
+# Common OS and editor-local files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.history/
