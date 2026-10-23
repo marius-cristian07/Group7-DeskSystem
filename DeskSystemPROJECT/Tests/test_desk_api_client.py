@@ -15,12 +15,12 @@ from Data.desk_api_client import (
 
 class DeskTests(unittest.TestCase):
 
-    # 1. Check that an empty URL causes an error
+    # check that an empty URL causes an error
     def test_empty_url_is_rejected(self):
         with self.assertRaises(DeskAPIError):
             validate_config("", "my-secret-key")
 
-    # 2. Check that good desk data is accepted
+    # check that good desk data is accepted
     def test_valid_desk_data_works(self):
         sample_desk = {
             "config": {"name": "Office Desk", "manufacturer": "Linak"},
@@ -40,7 +40,7 @@ class DeskTests(unittest.TestCase):
         self.assertEqual(result["desk_id"], "desk-1")
         self.assertEqual(result["state"]["position_mm"], 720)
 
-    # 3. Check that missing data causes an error
+    # check that missing data causes an error
     def test_missing_state_is_rejected(self):
         broken_desk = {
             "config": {"name": "Broken Desk", "manufacturer": "Linak"},
@@ -49,7 +49,7 @@ class DeskTests(unittest.TestCase):
         with self.assertRaises(DeskAPIError):
             validate_desk(broken_desk, "desk-1")
 
-    # 4. Check that a dead server connection is caught cleanly
+    # check that a dead server connection is caught cleanly
     def test_offline_server_is_caught(self):
         # Port 9999 is closed, so the connection fails immediately
         with self.assertRaises(DeskAPIError):
