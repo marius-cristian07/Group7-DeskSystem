@@ -2,12 +2,16 @@
 Created by : Edris Fiazi
 Created on : 21.10.2026
 Purpose    : KAN-5 Retrieve and display current desk data from the WiFi2BLE simulator
+
+Edited by : Edris Fiazi
+Edited on : 31.10.2026
+Purpose   : KAN-11 Created a method to set the desk height
 """
 
 import json
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 
 class DeskAPIError(Exception):
@@ -120,3 +124,34 @@ def get_desk(base_url, api_key, desk_id, timeout=5):
         f"{quote(desk_id, safe=':')}"
     )
     return validate_desk(get_json(url, timeout), desk_id)
+
+def put_json(url, payload, timeout=5):
+    text = json.dumps(payload)
+    data = text.encode("utf-8")
+    request = Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="PUT",
+    )
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            return json.load(response)
+    except HTTPError as error:
+        raise DeskAPIError(
+            f"HTTP {error.code}: API request failed"
+        ) from None
+    except (URLError, TimeoutError, OSError):
+        raise DeskAPIError("Connection failed or request timed out") from None
+    except (ValueError, UnicodeError):
+        raise DeskAPIError("API returned invalid JSON") from None
+
+def set_desk_height(base_url, api_key, desk_id, desk_hight, timeout=5):
+    """Set the desk hight through the simulator API."""
+    validate_config(base_url, api_key)
+    payload = { "position_mm": desk_hight} 
+    if not isinstance(desk_id, str) or not desk_id.strip():     
+        raise DeskAPIError("Desk ID cannot be empty")        
+    url = (     f"{base_url.rstrip('/')}/api/v2/{quote(api_key, safe='')}/desks/"     
+           f"{quote(desk_id, safe=':')}/state" ) 
+    return put_json(url, payload, timeout)
