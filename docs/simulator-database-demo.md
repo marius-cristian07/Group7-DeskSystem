@@ -18,7 +18,8 @@
    ```
 
 3. Show the simulator's desk list and one detail response, or run the console application to show the fetched desk data. If using a browser, hide the address bar because the API key is part of the URL.
-4. In another terminal, set `DESK_API_KEY` and `DATABASE_URL` as in [the database guide](../database/SETUP.md). Run the integrated application or saver using the documented command. Note the desk ID it handles.
+4. In another terminal, set `DESK_API_KEY` and `DATABASE_URL` as in [the database guide](../database/SETUP.md). Run `python DeskSystemPROJECT/DeskSystemPROJECT.py sync`, then request a height with `python DeskSystemPROJECT/DeskSystemPROJECT.py move <desk_id> <height_mm>` (details in [the Sprint 2 workflow guide](sprint2-workflow.md)). Note the desk ID it handles.
 5. In the Query Tool, query the desk table by that ID using the actual table and column names from the merged schema. Show that the saved row matches the simulator desk's ID and at least one value such as height. If the saver updates existing rows, run it again after changing a desk value and show the updated row rather than an accidental duplicate.
 
 The final two database steps can only be rehearsed after both the schema and saver are merged. Before then, run the simulator and database checks separately. A successful API response alone does not demonstrate persistence.
+ 
