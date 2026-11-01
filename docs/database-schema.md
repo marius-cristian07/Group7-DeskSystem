@@ -75,7 +75,7 @@ Stores requests to change a desk's height.
 | target_position_mm | INTEGER | Requested height in mm, must be positive |
 | status | TEXT | Command status |
 
-The application creates command records separately from the desk-reading API. Command status values should be agreed with the backend team before integration.
+The application creates command records separately from the desk-reading API. The application writes exactly two status values: `accepted` (the desk API confirmed the request) and `failed` (the API rejected it, could not be reached, or did not confirm the height). `target_position_mm` is the height that was requested, even if the desk adjusted its own target to stay within its limits.
 
 ## Relationships
 
