@@ -1,6 +1,6 @@
 # Local PostgreSQL setup
 
-Each teammate creates their own local database. The shared convention proposed for the Python saver is:
+Each teammate creates their own local database. The Python application uses:
 
 - Database: `group7_desksystem`
 - Host: `localhost`
@@ -8,16 +8,7 @@ Each teammate creates their own local database. The shared convention proposed f
 - Configuration variable: `DATABASE_URL`
 - URL: `postgresql://USERNAME:PASSWORD@localhost:5432/group7_desksystem`
 
-Confirm this exact convention with the persistence task before merging code that reads the URL. Use your own PostgreSQL username and password. If they contain URL punctuation such as `@`, `:`, `/`, or `%`, [percent-encode](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS) those characters in the URL. Never commit a real password. The root `.gitignore` ignores `.env` files; [`.env.example`](../.env.example) contains placeholders only.
-
-## Team handoff
-
-Share this guide and [`.env.example`](../.env.example) with the team now. Nobody needs to connect to another teammate's computer: each person creates `group7_desksystem` on their own PostgreSQL server.
-
-- **Schema task:** put the versioned PostgreSQL creation script at `database/001_initial_schema.sql`. Share the resulting table and column names with the persistence task, especially how desk identity and observations are stored.
-- **Persistence task:** confirm `DATABASE_URL` and its URL format, read it from the environment in the saver process, and document the Python dependency and command needed to call `save_desk(desk_record)`. Do not commit credentials.
-- **Application integration owner:** once the saver exists, document the command that fetches simulator desks and calls it. Until then, the existing console application only prints API data.
-- **Your setup/demo task:** confirm another teammate can follow the database steps, then rehearse the read → save → database query flow after the schema, saver, and application command are merged.
+Use your own PostgreSQL username and password, not the pgAdmin master password. If they contain URL punctuation such as `@`, `:`, `/`, or `%`, [percent-encode](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS) those characters in the URL. Never commit a real password. The root `.gitignore` ignores `.env` files; [`.env.example`](../.env.example) contains placeholders only.
 
 ## 1. Create and check the database
 
@@ -42,28 +33,20 @@ Set `DATABASE_URL` for the process that will save desk data. The example below i
 $env:DATABASE_URL = 'postgresql://USERNAME:PASSWORD@localhost:5432/group7_desksystem'
 ```
 
-If `psql` is on your PATH, check that this **exact URL** connects (pgAdmin's separate saved connection does not test `DATABASE_URL`):
-
-```powershell
-psql --dbname=$env:DATABASE_URL -c 'SELECT current_database(), current_user;'
-```
-
-On Windows, `psql.exe` is usually under `C:\Program Files\PostgreSQL\<version>\bin` if the command is not on PATH. You can also use PostgreSQL's SQL Shell. A successful result should name `group7_desksystem` and your local PostgreSQL role.
-
 For bash/zsh:
 
 ```bash
 export DATABASE_URL='postgresql://USERNAME:PASSWORD@localhost:5432/group7_desksystem'
 ```
 
-You can keep a private root `.env` based on [`.env.example`](../.env.example), but **the current Python application does not load `.env` or read `DATABASE_URL`**. Setting the variable now establishes the agreed configuration format; database writes require the persistence integration. If that code adds `.env` loading, update this section with its exact command. Avoid pasting a real URL into screenshots, issues, or chat.
+The application reads `DATABASE_URL` from the environment for `sync` and `move`; `show` only needs the simulator API key. It does not load `.env` files automatically. Avoid pasting a real URL into screenshots, issues, or chat.
 
-## 3. Apply the schema when available
+## 3. Apply the schema
 
-The schema task will add `database/001_initial_schema.sql`; it is not in this repository yet. After it is merged:
+The schema is in [`database/001_initial_schema.sql`](001_initial_schema.sql). Apply it to a new `group7_desksystem` database once. If its tables already exist, skip this step.
 
 1. Open **group7_desksystem → Query Tool** and confirm the connection selector still names `group7_desksystem`.
-2. Use the Query Tool's **Open File** button to load `database/001_initial_schema.sql` from this checkout. Review the loaded SQL, then use **Execute script** (F5) once on this new database. Check the **Messages** tab for errors. If there is an error, stop and resolve it with the schema task before trying the script again; parts of a script may already have run.
+2. Use the Query Tool's **Open File** button to load `database/001_initial_schema.sql` from this checkout. Review the loaded SQL, then use **Execute script** (F5) once on this new database. Check the **Messages** tab for errors. If there is an error, inspect which tables were created before trying the script again; parts of a script may already have run.
 3. Refresh **group7_desksystem → Schemas → public → Tables**, or run:
 
    ```sql
@@ -74,11 +57,9 @@ The schema task will add `database/001_initial_schema.sql`; it is not in this re
    ORDER BY table_name;
    ```
 
-   Compare the returned names with the `CREATE TABLE` statements in the committed schema file. Do not expect tables merely from creating the database.
+   Expect `desk`, `desk_readings`, `desk_errors`, and `desk_commands`. Creating the database alone does not create these tables.
 
 ## 4. Run the current simulator and application
-
-The commands below use **PowerShell**. In VS Code, choose **PowerShell** from the terminal profile menu (the arrow beside the `+` button). If your existing terminal tab says `cmd`, type `powershell` and press Enter before running commands that begin with `$`. A PowerShell prompt starts with `PS`; Command Prompt does not understand `$env:...` or `Get-Content`.
 
 From the repository root, initialize the simulator submodule once if it is missing:
 
@@ -93,38 +74,39 @@ cd wifi2ble-box-simulator
 python simulator/main.py --port 8000
 ```
 
-In a second terminal at the repository root, load the first local development API key from `wifi2ble-box-simulator/config/api_keys.json`, then run the current console application:
+In a second PowerShell terminal at the repository root, install the Python dependency once, load a local API key, and set your PostgreSQL connection URL:
 
 ```powershell
+python -m pip install -r requirements.txt
 $keys = Get-Content .\wifi2ble-box-simulator\config\api_keys.json | ConvertFrom-Json
 $env:DESK_API_KEY = $keys[0]
-python .\DeskSystemPROJECT\DeskSystemPROJECT.py
-```
-
-To inspect the raw simulator data in the same second terminal:
-
-```powershell
-$desksUrl = "http://localhost:8000/api/v2/$($env:DESK_API_KEY)/desks"
-$deskIds = Invoke-RestMethod -Uri $desksUrl
-$deskIds
-Invoke-RestMethod -Uri "$desksUrl/$($deskIds[0])" | ConvertTo-Json -Depth 10
-```
-
-This shows the desk IDs followed by one desk's `config`, `state`, `usage`, and `lastErrors`. The simulator prints request URLs containing the development API key in its access logs, so hide those logs during screen sharing. Stop the simulator with Ctrl+C in terminal 1 when finished.
-
-Later, after the saver is integrated, set the database URL in the **same terminal as the saver** before running its command:
-
-```powershell
 $env:DATABASE_URL = 'postgresql://USERNAME:PASSWORD@localhost:5432/group7_desksystem'
-python DeskSystemPROJECT/DeskSystemPROJECT.py
 ```
 
-Replace the last command if the persistence task supplies a different saver entry point. The application currently fetches and prints desk data from the simulator. It does **not** save rows to PostgreSQL yet. Successful console output therefore proves the simulator and API client work, while the Query Tool and table check prove the separate database setup. Follow the [demo runbook](../docs/simulator-database-demo.md) for the combined check once the saver is merged.
+Replace `USERNAME` and `PASSWORD` with your local PostgreSQL credentials. Run the commands you want to try:
+
+```powershell
+python .\DeskSystemPROJECT\DeskSystemPROJECT.py show
+python .\DeskSystemPROJECT\DeskSystemPROJECT.py sync
+python .\DeskSystemPROJECT\DeskSystemPROJECT.py move DESK_ID 1000
+```
+
+`show` prints current simulator data without saving it. `sync` saves a new reading for every available desk. For `move`, replace `DESK_ID` with an ID printed by `show` or `sync`; it requests a height from the simulator, saves the command result, and saves a follow-up reading if accepted. See the [Sprint 2 workflow guide](../docs/sprint2-workflow.md) for more detail.
+
+To verify the saved data in pgAdmin's `group7_desksystem` Query Tool, run these queries one at a time:
+
+```sql
+SELECT reading_id, desk_id, position_mm, speed_mms, status, recorded_at
+FROM desk_readings ORDER BY reading_id DESC LIMIT 10;
+
+SELECT command_id, desk_id, target_position_mm, status, requested_at
+FROM desk_commands ORDER BY command_id DESC LIMIT 10;
+```
 
 ## Troubleshooting
 
 - **Server missing or connection refused:** start PostgreSQL and check its host and port in pgAdmin's server connection properties.
 - **Authentication failed:** use the PostgreSQL role and password for your own server; the pgAdmin master password and simulator API key are different credentials.
 - **Wrong database in Query Tool:** close that Query Tool tab and open one by right-clicking `group7_desksystem` itself. Check `SELECT current_database(), current_user;` again.
-- **No tables:** confirm `001_initial_schema.sql` has been merged and executed in `group7_desksystem`, then refresh **Tables**. If the script reported an error, resolve it with the schema task before rerunning.
-- **Application prints desks but tables stay empty:** this is expected until the database saving code is integrated. After integration, check that `DATABASE_URL` is set in the same terminal as the saver process.
+- **No tables:** execute `001_initial_schema.sql` in `group7_desksystem`, then refresh **Tables**. If the script reported an error, inspect the database before rerunning it.
+- **`show` prints desks but tables stay empty:** `show` is read-only; run `sync` to save readings. Set `DATABASE_URL` in the same terminal as the application.
