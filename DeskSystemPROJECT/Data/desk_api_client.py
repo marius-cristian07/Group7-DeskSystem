@@ -1,3 +1,7 @@
+# Python client for the WiFi2BLE simulator, used by both the HTTP server and CLI workflows.
+# It builds authenticated URLs, sends GET/PUT requests, and checks desk response fields.
+# Callers receive validated dictionaries or DeskAPIError; the simulator key stays server-side.
+
 """
 Created by : Edris Fiazi
 Created on : 21.10.2026
@@ -17,6 +21,9 @@ from urllib.request import Request, urlopen
 class DeskAPIError(Exception):
     """A request or desk data validation failed."""
 
+    def __init__(self, message, status_code=None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def validate_config(base_url, api_key):
@@ -37,20 +44,16 @@ def validate_config(base_url, api_key):
         raise DeskAPIError("API key cannot be empty")
 
 
-
-def get_json(url, timeout=5):
-    """Retrieve JSON through HTTP without exposing the API key in errors."""
+def _request_json(request, timeout, error_descriptions=None):
+    """Share transport handling while keeping simulator URLs out of errors."""
     try:
-        with urlopen(url, timeout=timeout) as response:
+        with urlopen(request, timeout=timeout) as response:
             return json.load(response)
     except HTTPError as error:
-        descriptions = {
-            400: "Invalid API request",
-            401: "Authentication failed",
-            404: "Desk not found or currently unavailable",
-        }
+        # The original error contains the key in its URL, so build a safe message.
+        description = (error_descriptions or {}).get(error.code, "API request failed")
         raise DeskAPIError(
-            f"HTTP {error.code}: {descriptions.get(error.code, 'API request failed')}"
+            f"HTTP {error.code}: {description}", status_code=error.code,
         ) from None
     except (URLError, TimeoutError, OSError):
         raise DeskAPIError("Connection failed or request timed out") from None
@@ -58,10 +61,30 @@ def get_json(url, timeout=5):
         raise DeskAPIError("API returned invalid JSON") from None
 
 
+def get_json(url, timeout=5):
+    return _request_json(url, timeout, {
+        400: "Invalid API request",
+        401: "Authentication failed",
+        404: "Desk not found or currently unavailable",
+    })
+
+
+def _desks_url(base_url, api_key):
+    validate_config(base_url, api_key)
+    # The key is one path segment, even if it contains characters such as a slash.
+    return f"{base_url.rstrip('/')}/api/v2/{quote(api_key, safe='')}/desks"
+
+
+def _desk_url(base_url, api_key, desk_id):
+    url = _desks_url(base_url, api_key)
+    if not isinstance(desk_id, str) or not desk_id.strip():
+        raise DeskAPIError("Desk ID cannot be empty")
+    return f"{url}/{quote(desk_id, safe=':')}"
+
+
 def get_desk_ids(base_url, api_key, timeout=5):
     """Retrieve and validate the available desk IDs."""
-    validate_config(base_url, api_key)
-    url = f"{base_url.rstrip('/')}/api/v2/{quote(api_key, safe='')}/desks"
+    url = _desks_url(base_url, api_key)
     desk_ids = get_json(url, timeout)
     if type(desk_ids) is not list or any(type(item) is not str for item in desk_ids):
         raise DeskAPIError("Desk list must be an array of string IDs")
@@ -71,6 +94,7 @@ def get_desk_ids(base_url, api_key, timeout=5):
 def require_field(data, field, expected_type, path, non_negative=False):
     """Reject missing, mistyped or negative contract fields."""
     value = data.get(field)
+    # bool is a subclass of int in Python; exact types keep flags out of numbers.
     if type(value) is not expected_type:
         raise DeskAPIError(f"{path}.{field}: expected {expected_type.__name__}")
     if non_negative and value < 0:
@@ -83,6 +107,7 @@ def validate_desk(data, desk_id):
     path = f"Desk {desk_id}"
     if type(data) is not dict:
         raise DeskAPIError(f"{path}: expected an object")
+    # Check the nested sections before reading individual fields from them.
     config = require_field(data, "config", dict, path)
     state = require_field(data, "state", dict, path)
     usage = require_field(data, "usage", dict, path)
@@ -114,44 +139,21 @@ def validate_desk(data, desk_id):
 def get_desk(base_url, api_key, desk_id, timeout=5):
     """Retrieve one current desk record through the simulator API."""
 
-    validate_config(base_url, api_key)
-
-    if not isinstance(desk_id, str) or not desk_id.strip():
-        raise DeskAPIError("Desk ID cannot be empty")
-
-    url = (
-        f"{base_url.rstrip('/')}/api/v2/{quote(api_key, safe='')}/desks/"
-        f"{quote(desk_id, safe=':')}"
-    )
+    url = _desk_url(base_url, api_key, desk_id)
     return validate_desk(get_json(url, timeout), desk_id)
 
+
 def put_json(url, payload, timeout=5):
-    text = json.dumps(payload)
-    data = text.encode("utf-8")
     request = Request(
         url,
-        data=data,
+        data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"},
         method="PUT",
     )
-    try:
-        with urlopen(request, timeout=timeout) as response:
-            return json.load(response)
-    except HTTPError as error:
-        raise DeskAPIError(
-            f"HTTP {error.code}: API request failed"
-        ) from None
-    except (URLError, TimeoutError, OSError):
-        raise DeskAPIError("Connection failed or request timed out") from None
-    except (ValueError, UnicodeError):
-        raise DeskAPIError("API returned invalid JSON") from None
+    return _request_json(request, timeout)
 
-def set_desk_height(base_url, api_key, desk_id, desk_hight, timeout=5):
-    """Set the desk hight through the simulator API."""
-    validate_config(base_url, api_key)
-    payload = { "position_mm": desk_hight} 
-    if not isinstance(desk_id, str) or not desk_id.strip():     
-        raise DeskAPIError("Desk ID cannot be empty")        
-    url = (     f"{base_url.rstrip('/')}/api/v2/{quote(api_key, safe='')}/desks/"     
-           f"{quote(desk_id, safe=':')}/state" ) 
-    return put_json(url, payload, timeout)
+
+def set_desk_height(base_url, api_key, desk_id, height_mm, timeout=5):
+    """Request a target height; the simulator moves the desk gradually."""
+    url = _desk_url(base_url, api_key, desk_id)
+    return put_json(f"{url}/state", {"position_mm": height_mm}, timeout)

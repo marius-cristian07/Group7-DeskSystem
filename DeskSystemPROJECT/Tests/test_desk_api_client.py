@@ -1,11 +1,11 @@
-import sys
-from pathlib import Path
+# Checks simulator configuration and the required fields in desk responses.
+# Network failures are mocked, so these tests do not need a running simulator.
+
 import unittest
+from unittest.mock import patch
+from urllib.error import URLError
 
-# tells Python where to find the data folder
-sys.path.append(str(Path(__file__).resolve().parent.parent))
-
-from Data.desk_api_client import (
+from DeskSystemPROJECT.Data.desk_api_client import (
     DeskAPIError,
     validate_config,
     validate_desk,
@@ -51,9 +51,10 @@ class DeskTests(unittest.TestCase):
 
     # check that a dead server connection is caught cleanly
     def test_offline_server_is_caught(self):
-        # Port 9999 is closed, so the connection fails immediately
-        with self.assertRaises(DeskAPIError):
-            get_desk("http://127.0.0.1:9999", "test-key", "desk-1")
+        # Do not rely on a particular port being closed on a teammate's machine.
+        with patch("DeskSystemPROJECT.Data.desk_api_client.urlopen", side_effect=URLError("offline")):
+            with self.assertRaises(DeskAPIError):
+                get_desk("http://127.0.0.1:9999", "test-key", "desk-1")
 
 
 if __name__ == "__main__":

@@ -109,7 +109,7 @@ The mapping follows the Sprint 1 desk data contract.
 
 ## Python Persistence Integration
 
-The persistence module should implement `save_desk(desk_record)` using the agreed Sprint 1 data contract.
+[`desk_repository.py`](../DeskSystemPROJECT/Data/desk_repository.py) implements `save_desk(desk_record)` using the internal desk data contract. Connection and transaction handling is shared in [`database.py`](../DeskSystemPROJECT/Data/database.py).
 
 Expected internal record structure:
 
@@ -142,7 +142,7 @@ Expected internal record structure:
 }
 ```
 
-Recommended saving process:
+Implemented saving process:
 
 1. Insert the desk into `desk`, or update its name and manufacturer if `desk_id` already exists. PostgreSQL `INSERT ... ON CONFLICT (desk_id) DO UPDATE` can be used.
 2. Insert a new row into `desk_readings` using the desk's current state and usage counters.
@@ -154,7 +154,7 @@ If `lastErrors` is empty, no error rows need to be inserted.
 
 Do not insert `reading_id`, `error_id`, `command_id`, `recorded_at`, or `requested_at` manually. PostgreSQL generates these values.
 
-The saver should preserve unknown status strings and error codes instead of assuming only the currently known values are possible.
+The saver preserves unknown status strings and error codes.
 
 The simulator's `lastErrors` data is a recent-error snapshot, not a guaranteed list of newly occurring errors.
 
@@ -163,7 +163,7 @@ The simulator's `lastErrors` data is a recent-error snapshot, not a guaranteed l
 The project uses PostgreSQL with the following local configuration:
 
 - Database: `group7_desksystem`
-- Host: `localhost`
+- Host: `127.0.0.1`
 - Port: `5432`
 - Connection environment variable: `DATABASE_URL`
 - Schema file: `database/001_initial_schema.sql`
@@ -177,9 +177,9 @@ To set up the database:
 3. Run `database/001_initial_schema.sql` once on the new database.
 4. Verify that `desk`, `desk_readings`, `desk_errors`, and `desk_commands` exist.
 
-The Python saver should read the PostgreSQL connection URL from the `DATABASE_URL` environment variable. Database credentials must not be committed to Git.
+The Python saver reads the PostgreSQL connection URL from the `DATABASE_URL` environment variable. Python does not load `.env` files automatically. Database credentials must not be committed to Git. See [the database setup guide](../database/SETUP.md) for the commands.
 
-The existing Python application does not automatically save API data to PostgreSQL. This requires the persistence module and backend integration.
+The CLI `sync` command saves desk readings. The CLI `move` command records a movement request and saves a follow-up reading if the simulator accepts it. The CLI `show` command and the HTTP desk endpoints only fetch live data; they do not write readings. See [the workflow guide](sprint2-workflow.md) and [project setup](../SETUP.md).
 
 ## Testing
 
@@ -196,4 +196,4 @@ Successful tests:
 - Rejecting duplicate `(reading_id, error_index)` values (UNIQUE)
 - Inserting movement commands
 
-The schema has been tested directly using SQL. End-to-end testing with the Python persistence module is still required.
+The schema has been tested directly using SQL. The Python suite checks repository transactions and workflow behavior using mocks. A live PostgreSQL persistence check remains a separate manual step; follow [the simulator and database demo](simulator-database-demo.md). The launcher's automated integration test does not use PostgreSQL.

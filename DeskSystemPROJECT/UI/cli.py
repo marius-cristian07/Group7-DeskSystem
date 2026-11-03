@@ -1,3 +1,7 @@
+# Terminal interface for show, sync, and move, called by DeskSystemPROJECT.py.
+# Parse arguments, call DeskWorkflow, then print results and return an exit code.
+# A zero exit code means success; one reports a failure, including partial failures.
+
 """
     python DeskSystemPROJECT.py                  show the help, does nothing else
     python DeskSystemPROJECT.py show             print current desk data (read-only)
@@ -6,20 +10,19 @@
 """
 
 import argparse
-import os
 import sys
 
-from Domain.desk_workflow import STATUS_ACCEPTED, DeskWorkflow, WorkflowError
+from ..config import DEFAULT_BASE_URL, get_simulator_config
+from ..Domain.desk_workflow import STATUS_ACCEPTED, DeskWorkflow, WorkflowError
 
-DEFAULT_BASE_URL = "http://localhost:8000"
 # The simulator moves desks once per second, so a reading taken at the same
 # instant as the request would still show the desk standing still.
 DEFAULT_WAIT_S = 2
 
-EPILOG = """\
+EPILOG = f"""\
 environment variables:
   DESK_API_KEY        API key of the simulator (required)
-  DESK_API_BASE_URL   simulator address (default: http://localhost:8000)
+  DESK_API_BASE_URL   simulator address (default: {DEFAULT_BASE_URL})
   DATABASE_URL        PostgreSQL connection URL (required by sync and move)
 
 examples:
@@ -59,6 +62,7 @@ def build_parser():
         epilog=EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    # Subcommands select the workflow; move also needs a desk ID and target height.
     commands = parser.add_subparsers(dest="command", metavar="command")
 
     commands.add_parser(
@@ -100,6 +104,7 @@ def _error(message):
     print(message, file=sys.stderr)
 
 
+# These handlers format workflow results and return the terminal exit code.
 def run_show(workflow):
     fetched = workflow.fetch_all()
     print(f"Found {len(fetched)} available desk(s).")
@@ -156,6 +161,7 @@ def run_move(workflow, desk_id, height_mm, wait_s):
     else:
         _error(f"Request FAILED for desk {result.desk_id}: {result.error}")
 
+    # Report storage failures separately: the desk may already have accepted the move.
     if result.command_id is not None:
         print(f"  Recorded in desk_commands as command #{result.command_id} ({result.status}).")
     else:
@@ -184,9 +190,7 @@ def main(argv=None, env=None, workflow_factory=DeskWorkflow):
         parser.print_help()
         return 0
 
-    env = os.environ if env is None else env
-    base_url = env.get("DESK_API_BASE_URL", DEFAULT_BASE_URL)
-    api_key = env.get("DESK_API_KEY")
+    base_url, api_key = get_simulator_config(env)
     if not api_key:
         _error("Set DESK_API_KEY before starting the application.")
         return 1

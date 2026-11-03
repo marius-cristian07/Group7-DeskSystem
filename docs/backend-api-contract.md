@@ -1,6 +1,8 @@
 # Backend API Contract
 
-Base URL: `http://localhost:8080`
+Base URL: `http://127.0.0.1:8080`
+
+Start the local simulator, backend, and React together with `python run.py` from the repository root. See [SETUP.md](../SETUP.md) for installation and manual startup options.
 
 This document describes the HTTP endpoints provided by the Python backend.
 
@@ -150,21 +152,23 @@ The backend uses the following environment variables:
 
 | Variable | Description |
 | --- | --- |
-| `DESK_API_BASE_URL` | Simulator address, default: `http://localhost:8000` |
+| `DESK_API_BASE_URL` | Simulator address, default: `http://127.0.0.1:8000` |
 | `DESK_API_KEY` | API key required to access the simulator |
 
 The simulator API key is only used by the Python backend and is not sent to the React frontend.
 
 ## Testing
 
-The endpoints were manually tested using FastAPI Swagger UI at `http://localhost:8080/docs`.
+The endpoints can be inspected using FastAPI Swagger UI at `http://127.0.0.1:8080/docs`.
 
 Successful checks:
 
 - `GET /api/health` returns HTTP `200`.
-- `GET /api/desks` returns the current data of all 7 simulator desks.
+- `GET /api/desks` returns the current data of available simulator desks. The earlier manual check returned seven; the count varies when simulated desks power off.
 - `GET /api/desks/{desk_id}` returns the requested desk.
 - An unknown desk ID returns HTTP `404`.
 - Stopping the simulator causes `GET /api/desks` to return HTTP `502`.
 
 The endpoints return live simulator data. They do not read desk history from PostgreSQL.
+
+Automated route checks run with the Python test suite documented in [README.md](../README.md#checks). The optional launcher integration check uses temporary simulator data and verifies a height change through the live backend.

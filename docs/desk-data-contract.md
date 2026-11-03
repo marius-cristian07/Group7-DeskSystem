@@ -1,21 +1,23 @@
 # Desk data contract — Sprint 1
 
-Owner: Marius. Status: proposed v1, awaiting agreement with Daniil (API client) and Edris (backend).
+Owner: Marius. This document describes the internal format currently implemented by the Python API client and persistence code, originally proposed in Sprint 1.
 
-This document defines the desk data passed from the API client to the backend. It covers desk identity, name, position, status, usage counters, and error history. The proposal preserves the simulator's JSON structure and adds `desk_id` at the top level. In Python, this can be an ordinary dictionary containing dictionaries and a list; a custom class is not required for Sprint 1.
+This document defines the desk data passed from the simulator API client to the Python workflows and persistence code. It covers desk identity, name, position, status, usage counters, and error history. The record preserves the simulator's JSON structure and adds `desk_id` at the top level. Python represents it as a dictionary containing dictionaries and a list.
+
+React receives a separate, flattened response described in [the backend API contract](backend-api-contract.md). It calls the Python backend and does not call the simulator directly.
 
 ## Getting the data
 
 1. Start the simulator using [SETUP.md](../SETUP.md), if it is not already running.
-2. Call `GET http://localhost:8000/api/v2/<api_key>/desks`. The result is a JSON array of desk ID strings.
-3. For each ID, call `GET http://localhost:8000/api/v2/<api_key>/desks/<desk_id>`.
+2. The Python client calls `GET http://127.0.0.1:8000/api/v2/<api_key>/desks`. The result is a JSON array of desk ID strings.
+3. For each ID, it calls `GET http://127.0.0.1:8000/api/v2/<api_key>/desks/<desk_id>`.
 4. Keep the ID used in the request: the successful response body does **not** contain it.
 
 Replace the placeholders, including their angle brackets. Keep the API key in configuration; do not put it in the internal desk record or example files.
 
 ## Fields and meaning
 
-The fields below are required and non-null in the proposed internal contract. The simulator normally supplies all the API fields, but its OpenAPI schema does not formally mark them as required. These requirements are our proposed application rules.
+The fields below are required and non-null in the implemented internal contract. The simulator normally supplies all the API fields, but its OpenAPI schema does not formally mark them as required. The Python client's `validate_desk()` enforces these application rules.
 
 - `desk_id`: string. Comes from the list endpoint and the detail request URL. Treat it as an opaque identifier, for example `cd:fb:1a:53:fb:e6`. Do not identify desks by their display names.
 - `config`: object containing:
@@ -42,7 +44,7 @@ The simulator initializes counters to 25 and 1 and includes an initial error ent
 
 ## Internal format and conversion
 
-Use the successful API response unchanged for `config`, `state`, `usage`, and `lastErrors`, and add `desk_id`. Retain the existing camelCase names so Sprint 1 needs no field renaming or unit conversion.
+Use the successful API response unchanged for `config`, `state`, `usage`, and `lastErrors`, and add `desk_id`. The internal record retains the simulator's camelCase names and units; the HTTP backend separately formats its response for React.
 
 Conceptual Python conversion, after checking the HTTP response and validating its fields:
 
@@ -69,7 +71,7 @@ Do not replace missing fields with zero, false, or empty strings. Report a parsi
 - HTTP 404 with `{"error": "Desk not found"}`: the ID is unknown or the desk is currently powered off. The response does not distinguish these cases.
 - Connection failure or timeout: report that data could not be retrieved.
 
-An error response is not a desk record. Do not create a fake desk with zero height or a fabricated status. Powered-off desks are omitted from the list endpoint, and a desk can become unavailable between listing and fetching. The backend should report that individual fetch failure without presenting it as fresh desk data.
+An error response is not a desk record. Do not create a fake desk with zero height or a fabricated status. Powered-off desks are omitted from the list endpoint, and a desk can become unavailable between listing and fetching. The CLI `show` and `sync` commands report individual failures and continue with other desks. The HTTP list endpoint currently returns 502 if any desk fetch fails; React clears its current data and retries automatically.
 
 ## Examples and evidence
 
@@ -82,6 +84,4 @@ Field names/types were checked against [OpenAPI](../wifi2ble-box-simulator/docs/
 
 ## Team handoff
 
-Marius proposes this format and owns this document and its examples. Edris and Martin should confirm that the client will return the defined record and the backend will consume it. Until they confirm, this is a proposal rather than an agreed team contract.
-
-Review together: the added `desk_id`, preservation of API field names and units, required/non-null fields, and how fetch/validation failures reach the backend. Record the agreement and any changes here. Ivan can use the examples and validation rules for valid-response and failure-case tests.
+The client, workflows, and repositories now use this format. If the team changes it, update the validator, examples, persistence mapping, and tests together. Keep the internal simulator record distinct from the public React API response.
