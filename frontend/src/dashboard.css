@@ -1,0 +1,414 @@
+/* Styles for the desk dashboard (S3-4). App.jsx imports this file.
+   Colours are variables at the top, with a dark version for people whose device
+   is set to dark mode. The layout works from a 320px phone up to a wide laptop. */
+
+:root {
+  color-scheme: light dark;
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --text: #17212b;
+  --muted: #55616d;
+  --border: #d5dbe1;
+  --focus: #1f6feb;
+
+  --idle: #2e7d5b;
+  --idle-bg: #e3f3ec;
+  --idle-text: #1c5a40;
+  --moving: #1f6feb;
+  --moving-bg: #e2eeff;
+  --moving-text: #12408f;
+  --error: #c62828;
+  --error-bg: #fbd9d7;
+  --error-text: #8e1c1c;
+  --error-tint: #fdeceb;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f151b;
+    --surface: #18212a;
+    --text: #e8edf2;
+    --muted: #a2afbb;
+    --border: #2c3946;
+    --focus: #8ab8ff;
+
+    --idle: #4cb58a;
+    --idle-bg: #173b2d;
+    --idle-text: #9be3c2;
+    --moving: #5b9dff;
+    --moving-bg: #14284a;
+    --moving-text: #b7d3ff;
+    --error: #ff6b66;
+    --error-bg: #4a1d1b;
+    --error-text: #ffc9c6;
+    --error-tint: #2c1716;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.4;
+}
+
+/* ---------- page ---------- */
+
+.app {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.app__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+
+.app__header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.app__updated {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.notice {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.notice--error {
+  border-color: var(--error);
+  background: var(--error-tint);
+}
+
+.notice p {
+  margin: 0 0 12px;
+}
+
+.notice p:last-child {
+  margin-bottom: 0;
+}
+
+.notice button {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* ---------- dashboard ---------- */
+
+.dashboard h2 {
+  margin: 20px 0 4px;
+  font-size: 1.15rem;
+}
+
+.tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.dashboard__note {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.summary li {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.9rem;
+}
+
+.summary__moving {
+  border-color: var(--moving);
+}
+
+.summary__error {
+  border-color: var(--error);
+}
+
+/* One column on a narrow phone, more columns as the screen gets wider. */
+.desk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.desk-grid > li {
+  display: flex;
+}
+
+/* ---------- card ---------- */
+
+.desk-card {
+  --accent: var(--idle);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 150px;
+  padding: 14px 14px 14px 16px;
+  border: 1px solid var(--border);
+  border-left: 6px solid var(--accent);
+  border-radius: 12px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  /* Phones draw a coloured flash over a tapped element; the :active style below replaces it. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+.desk-card:hover {
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.15);
+}
+
+.desk-card:active {
+  transform: scale(0.99);
+}
+
+.desk-card:focus-visible,
+.desk-dialog__close:focus-visible,
+.notice button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.desk-card--moving {
+  --accent: var(--moving);
+}
+
+.desk-card--error {
+  --accent: var(--error);
+  background: var(--error-tint);
+}
+
+.desk-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.desk-card__name {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.desk-card__id {
+  color: var(--muted);
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.desk-card__height {
+  color: var(--muted);
+}
+
+.desk-card__value {
+  color: var(--text);
+  font-size: 1.9rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.desk-card__line {
+  font-size: 0.9rem;
+}
+
+/* The height number pulses while a desk is moving, unless the person asked for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .desk-card--moving .desk-card__value {
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* ---------- state badge ---------- */
+
+.badge {
+  flex-shrink: 0;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.badge--idle {
+  background: var(--idle-bg);
+  color: var(--idle-text);
+}
+
+.badge--moving {
+  background: var(--moving-bg);
+  color: var(--moving-text);
+}
+
+.badge--error {
+  background: var(--error-bg);
+  color: var(--error-text);
+}
+
+/* ---------- details dialog ---------- */
+
+.desk-dialog {
+  box-sizing: border-box;
+  width: min(560px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.desk-dialog::backdrop {
+  background: rgb(0 0 0 / 0.55);
+}
+
+.desk-dialog__body {
+  padding: 20px;
+}
+
+.desk-dialog__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.desk-dialog h2 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.desk-dialog h3 {
+  margin: 20px 0 6px;
+  font-size: 1rem;
+}
+
+.desk-id {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.desk-dialog__close {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: inherit;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.detail-list {
+  margin: 16px 0 0;
+}
+
+.detail-list > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.detail-list dt {
+  color: var(--muted);
+}
+
+.detail-list dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+}
+
+.desk-dialog table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.desk-dialog th,
+.desk-dialog td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.desk-dialog__note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* On a phone the dialog is a sheet that slides up from the bottom edge. */
+@media (max-width: 600px) {
+  .desk-dialog {
+    width: 100%;
+    max-width: 100%;
+    max-height: 88dvh;
+    margin: auto 0 0;
+    border-radius: 16px 16px 0 0;
+  }
+}
+
+@media (min-width: 720px) {
+  .app {
+    padding: 24px 32px;
+  }
+}
