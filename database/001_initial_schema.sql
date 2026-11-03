@@ -1,8 +1,14 @@
+-- Initial PostgreSQL schema; run once in the project database as described in database/SETUP.md.
+-- desk holds identities; desk_readings and desk_commands hold history for those desks.
+-- desk_errors belongs to a reading, so an old snapshot keeps its own error list.
+
+-- One row per desk, shared by its readings and movement requests.
 CREATE TABLE desk (
     desk_id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     manufacturer TEXT NOT NULL
     );
+-- Each sync adds a snapshot; older readings remain available as history.
 CREATE TABLE desk_readings (
     reading_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     desk_id TEXT NOT NULL REFERENCES desk(desk_id),
@@ -17,6 +23,7 @@ CREATE TABLE desk_readings (
     is_overload_protection_down BOOLEAN NOT NULL,
     is_anti_collision BOOLEAN NOT NULL
     );
+-- Errors belong to a specific reading, with their original list order.
 CREATE TABLE desk_errors (
     error_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     reading_id BIGINT NOT NULL REFERENCES desk_readings(reading_id),
@@ -25,6 +32,7 @@ CREATE TABLE desk_errors (
     error_code INTEGER NOT NULL CHECK (error_code >= 0),
     UNIQUE (reading_id, error_index)
     );
+-- Store requested targets; acceptance does not mean movement is complete.
 CREATE TABLE desk_commands(
     desk_id TEXT NOT NULL REFERENCES desk(desk_id),
     command_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

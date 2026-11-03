@@ -1,6 +1,6 @@
 # Sprint 2 workflow: sync and move (S2-5)
 
-Two runnable commands show both Sprint 2 capabilities together:
+The existing CLI commands provide live reads, persistence, and movement requests:
 
 | Command | What it does | Moves a desk? |
 |---|---|---|
@@ -12,32 +12,35 @@ Starting the application with no command only prints the help text. A desk moves
 
 ## Before you start
 
-1. Start the simulator ([SETUP.md](../SETUP.md)).
+1. Complete [project setup](../SETUP.md), then run `python run.py` from the repository root. This starts the simulator, backend, and React in one terminal. The same guide has simulator-only startup instructions for CLI exercises.
 2. Create the database and apply `database/001_initial_schema.sql` ([database/SETUP.md](../database/SETUP.md)).
-3. Install the Python dependency once: `pip install -r requirements.txt`
-4. In the terminal that runs the application, set:
+3. Open a separate terminal at the repository root for the optional CLI commands. The application services continue running in the launcher terminal.
+4. In that CLI terminal, set:
 
 ```powershell
 $keys = Get-Content .\wifi2ble-box-simulator\config\api_keys.json | ConvertFrom-Json
 $env:DESK_API_KEY = $keys[0]
-$env:DATABASE_URL = 'postgresql://USERNAME:PASSWORD@localhost:5432/group7_desksystem'
+$env:DATABASE_URL = 'postgresql://USERNAME:PASSWORD@127.0.0.1:5432/group7_desksystem'
 ```
 
-`DESK_API_BASE_URL` is optional and defaults to `http://localhost:8000`. The application does not read `.env` files; set the variables in the terminal.
+`DESK_API_BASE_URL` is optional and defaults to `http://127.0.0.1:8000`. The application does not read `.env` files; set the variables in the terminal. To run the simulator, backend, and web app together, use `python run.py` from the repository root; see [SETUP.md](../SETUP.md).
 
 ## Commands
 
 ```powershell
-python DeskSystemPROJECT/DeskSystemPROJECT.py sync
-python DeskSystemPROJECT/DeskSystemPROJECT.py move cd:fb:1a:53:fb:e6 1000
+.\.venv\Scripts\python.exe DeskSystemPROJECT/DeskSystemPROJECT.py show
+.\.venv\Scripts\python.exe DeskSystemPROJECT/DeskSystemPROJECT.py sync
+.\.venv\Scripts\python.exe DeskSystemPROJECT/DeskSystemPROJECT.py move cd:fb:1a:53:fb:e6 1000
 ```
 
-For a stable demo, start the simulator with `--no-user-simulation --desk-poweroff-chance 0 --desk-collision-chance 0` so nothing else moves the desks.
+These examples use the Windows virtual environment interpreter. On macOS/Linux, use `.venv/bin/python`.
+
+For a stable demo with custom simulator flags, use manual simulator startup instead of the launcher: add `--no-user-simulation --desk-poweroff-chance 0 --desk-collision-chance 0`. Existing saved collision and power-off settings in `wifi2ble-box-simulator/data/desks_state.json` override those two flags; check those settings with the simulator stopped if desks still collide or disappear.
 
 ### sync
 
 ```
-Synchronising desks from http://localhost:8000 ...
+Synchronising desks from http://127.0.0.1:8000 ...
 Found 7 available desk(s).
   [saved]  DESK 4486 | cd:fb:1a:53:fb:e6 | 872 mm | Normal | reading #1
   ...

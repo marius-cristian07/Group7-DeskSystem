@@ -3,16 +3,16 @@
 Each teammate creates their own local database. The Python application uses:
 
 - Database: `group7_desksystem`
-- Host: `localhost`
+- Host: `127.0.0.1`
 - Port: `5432`
 - Configuration variable: `DATABASE_URL`
-- URL: `postgresql://USERNAME:PASSWORD@localhost:5432/group7_desksystem`
+- URL: `postgresql://USERNAME:PASSWORD@127.0.0.1:5432/group7_desksystem`
 
 Use your own PostgreSQL username and password, not the pgAdmin master password. If they contain URL punctuation such as `@`, `:`, `/`, or `%`, [percent-encode](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS) those characters in the URL. Never commit a real password. The root `.gitignore` ignores `.env` files; [`.env.example`](../.env.example) contains placeholders only.
 
 ## 1. Create and check the database
 
-1. Install PostgreSQL and pgAdmin if needed, then start your local PostgreSQL server. In pgAdmin, connect to that server with your own PostgreSQL account. Check that it listens on `localhost:5432`, or use the actual local port consistently if your installation differs.
+1. Install PostgreSQL and pgAdmin if needed, then start your local PostgreSQL server. In pgAdmin, connect to that server with your own PostgreSQL account. Check that it listens on `127.0.0.1:5432`, or use the actual local port consistently if your installation differs.
 2. In Object Explorer, right-click **Databases → Create → Database...**. Name it `group7_desksystem`, leave the other settings at their defaults, and save. If it already exists, use that database instead of creating another.
 3. Right-click **group7_desksystem → Query Tool**. Check the database name in the Query Tool tab or connection selector before executing any SQL.
 4. Run:
@@ -30,13 +30,13 @@ pgAdmin documents [database creation](https://www.pgadmin.org/docs/pgadmin4/late
 Set `DATABASE_URL` for the process that will save desk data. The example below is for PowerShell; replace both placeholders with your own credentials. This value lasts for the current terminal session:
 
 ```powershell
-$env:DATABASE_URL = 'postgresql://USERNAME:PASSWORD@localhost:5432/group7_desksystem'
+$env:DATABASE_URL = 'postgresql://USERNAME:PASSWORD@127.0.0.1:5432/group7_desksystem'
 ```
 
 For bash/zsh:
 
 ```bash
-export DATABASE_URL='postgresql://USERNAME:PASSWORD@localhost:5432/group7_desksystem'
+export DATABASE_URL='postgresql://USERNAME:PASSWORD@127.0.0.1:5432/group7_desksystem'
 ```
 
 The application reads `DATABASE_URL` from the environment for `sync` and `move`; `show` only needs the simulator API key. It does not load `.env` files automatically. Avoid pasting a real URL into screenshots, issues, or chat.
@@ -61,42 +61,35 @@ The schema is in [`database/001_initial_schema.sql`](001_initial_schema.sql). Ap
 
 ## 4. Run the current simulator and application
 
-From the repository root, initialize the simulator submodule once if it is missing:
+Complete [project setup](../SETUP.md) once, then start the simulator, backend, and React from the repository root:
 
 ```powershell
-git submodule update --init --recursive
+python run.py
 ```
 
-In terminal 1, start the simulator from its own directory, because it uses paths relative to that directory:
+PostgreSQL remains your existing local service. Open a second terminal at the repository root for these optional database exercises and set its credentials:
 
 ```powershell
-cd wifi2ble-box-simulator
-python simulator/main.py --port 8000
-```
-
-In a second PowerShell terminal at the repository root, install the Python dependency once, load a local API key, and set your PostgreSQL connection URL:
-
-```powershell
-python -m pip install -r requirements.txt
-$keys = Get-Content .\wifi2ble-box-simulator\config\api_keys.json | ConvertFrom-Json
-$env:DESK_API_KEY = $keys[0]
-$env:DATABASE_URL = 'postgresql://USERNAME:PASSWORD@localhost:5432/group7_desksystem'
+$env:DESK_API_KEY = (Get-Content wifi2ble-box-simulator/config/api_keys.json -Raw | ConvertFrom-Json)[0]
+$env:DATABASE_URL = 'postgresql://USERNAME:PASSWORD@127.0.0.1:5432/group7_desksystem'
 ```
 
 Replace `USERNAME` and `PASSWORD` with your local PostgreSQL credentials. Run the commands you want to try:
 
 ```powershell
-python .\DeskSystemPROJECT\DeskSystemPROJECT.py show
-python .\DeskSystemPROJECT\DeskSystemPROJECT.py sync
-python .\DeskSystemPROJECT\DeskSystemPROJECT.py move DESK_ID 1000
+.\.venv\Scripts\python.exe DeskSystemPROJECT/DeskSystemPROJECT.py show
+.\.venv\Scripts\python.exe DeskSystemPROJECT/DeskSystemPROJECT.py sync
+.\.venv\Scripts\python.exe DeskSystemPROJECT/DeskSystemPROJECT.py move DESK_ID 1000
 ```
+
+On macOS/Linux, use `.venv/bin/python`. For simulator-only startup, see the manual commands in [SETUP.md](../SETUP.md).
 
 `show` prints current simulator data without saving it. `sync` saves a new reading for every available desk. For `move`, replace `DESK_ID` with an ID printed by `show` or `sync`; it requests a height from the simulator, saves the command result, and saves a follow-up reading if accepted. See the [Sprint 2 workflow guide](../docs/sprint2-workflow.md) for more detail.
 
 To verify the saved data in pgAdmin's `group7_desksystem` Query Tool, run these queries one at a time:
 
 ```sql
-SELECT reading_id, desk_id, position_mm, speed_mms, status, recorded_at
+SELECT reading_id, desk_id, position_mm, status, recorded_at
 FROM desk_readings ORDER BY reading_id DESC LIMIT 10;
 
 SELECT command_id, desk_id, target_position_mm, status, requested_at

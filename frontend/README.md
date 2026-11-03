@@ -4,13 +4,17 @@ The temporary view shows live desk names, heights, and statuses. S3-4 will repla
 
 ## Local setup
 
-From the repository root, use three terminals in this order:
+Follow [the project setup guide](../SETUP.md) once. Then, from the repository root:
 
-1. Start the simulator on port 8000: `cd wifi2ble-box-simulator` then `python simulator/main.py --port 8000`.
-2. Start the Python backend on port 8080. Install Python packages once with `python -m pip install -r requirements.txt`. Set `DESK_API_KEY` in **this backend terminal** to a key from `wifi2ble-box-simulator/config/api_keys.json`, then run `python -m uvicorn DeskSystemPROJECT.server:app --host 127.0.0.1 --port 8080` from the repository root. For PowerShell, set the variables with `$env:DESK_API_KEY = (Get-Content wifi2ble-box-simulator/config/api_keys.json -Raw | ConvertFrom-Json)[0]` and `$env:DESK_API_BASE_URL = 'http://127.0.0.1:8000'`. The backend defaults to `http://localhost:8000` if `DESK_API_BASE_URL` is unset. On Windows, that hostname can add about two seconds to each simulator request, so the loopback IP is recommended for local development. The backend does not load `.env` automatically.
-3. Start React: `cd frontend`, `npm install`, then `npm run dev`. Open the address printed by Vite, normally `http://localhost:5173`.
+```powershell
+python run.py
+```
 
-The frontend defaults to `http://127.0.0.1:8080`. To use a different backend address, copy `frontend/.env.example` to `frontend/.env.local` and change `VITE_API_BASE_URL` (for example, `http://127.0.0.1:8081`); restart Vite afterward. This value is included in browser code, so it must contain only the Python backend address. Never put the simulator key or simulator URL in any `VITE_` variable. The browser calls only `/api/desks`, `/api/desks/{desk_id}`, and `/api/health` on the Python backend.
+Open **http://127.0.0.1:5173**. This starts the simulator, backend, and React in one terminal. Ctrl+C stops them together. The launcher configures the local addresses and reads the simulator key for the backend.
+
+For frontend-only work with a backend already running, use `npm install` once and `npm run dev -- --host 127.0.0.1 --port 5173 --strictPort` from `frontend/`. Keeping port 5173 matches the backend's allowed browser origins. Use `npm run build` to check the production build. The project setup guide also has the separate service commands for debugging.
+
+The frontend defaults to `http://127.0.0.1:8080`. When starting Vite manually, you can copy `frontend/.env.example` to `frontend/.env.local` and change `VITE_API_BASE_URL` (for example, `http://127.0.0.1:8081`); restart Vite afterward. The launcher supplies its own matching local address. This value is included in browser code, so it must contain only the Python backend address. Never put the simulator key or simulator URL in any `VITE_` variable. The browser calls only `/api/desks`, `/api/desks/{desk_id}`, and `/api/health` on the Python backend.
 
 ## Dashboard integration
 

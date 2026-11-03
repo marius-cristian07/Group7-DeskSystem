@@ -1,25 +1,72 @@
 # Simulator + PostgreSQL demo runbook
 
-## Team handoff before the demo
+This demonstrates the existing CLI persistence and movement workflows alongside the web app.
 
-1. Confirm with the group that the saver reads `DATABASE_URL=postgresql://USERNAME:PASSWORD@localhost:5432/group7_desksystem`, and record any dependency/install command and the exact process that calls the saver. Each teammate supplies their own credentials locally.
-2. After the schema task merges `database/001_initial_schema.sql`, identify the table that stores desk snapshots plus its desk ID column. Apply it using [the database guide](../database/SETUP.md).
-3. Have one teammate who did not write the guide create the database and tables on their computer. Record any unclear step and fix the guide.
-4. Choose one laptop for the live demo. Check PostgreSQL, pgAdmin, the simulator, Python, the schema, the API key, and the persistence module in that checkout. Keep credentials out of slides and screen sharing; simulator access logs also include the API key in request paths.
+## Prepare once
 
-## Live sequence
+1. Complete [project setup](../SETUP.md), including the Python virtual environment and frontend dependencies.
+2. Create `group7_desksystem` and apply `database/001_initial_schema.sql` using [the database guide](../database/SETUP.md). The tables are `desk`, `desk_readings`, `desk_errors`, and `desk_commands`.
+3. Keep PostgreSQL running as your local service. Use your own credentials in `DATABASE_URL`.
+4. Choose the machine for the demo and rehearse the commands below. Keep credentials out of screen sharing. The launcher redacts the simulator key in its combined log; the simulator's own manual log contains authenticated URLs.
 
-1. In pgAdmin, show `SELECT current_database(), current_user;` on `group7_desksystem`, then show the expected tables in **Schemas → public → Tables**.
-2. Start the simulator in its directory with stable demo settings:
+## Start the app
 
-   ```powershell
-   cd wifi2ble-box-simulator
-   python simulator/main.py --port 8000 --desk-poweroff-chance 0 --desk-collision-chance 0 --no-user-simulation
-   ```
+From the repository root:
 
-3. Show the simulator's desk list and one detail response, or run the console application to show the fetched desk data. If using a browser, hide the address bar because the API key is part of the URL.
-4. In another terminal, set `DESK_API_KEY` and `DATABASE_URL` as in [the database guide](../database/SETUP.md). Run `python DeskSystemPROJECT/DeskSystemPROJECT.py sync`, then request a height with `python DeskSystemPROJECT/DeskSystemPROJECT.py move <desk_id> <height_mm>` (details in [the Sprint 2 workflow guide](sprint2-workflow.md)). Note the desk ID it handles.
-5. In the Query Tool, query the desk table by that ID using the actual table and column names from the merged schema. Show that the saved row matches the simulator desk's ID and at least one value such as height. If the saver updates existing rows, run it again after changing a desk value and show the updated row rather than an accidental duplicate.
+```powershell
+python run.py
+```
 
-The final two database steps can only be rehearsed after both the schema and saver are merged. Before then, run the simulator and database checks separately. A successful API response alone does not demonstrate persistence.
- 
+Open **http://127.0.0.1:5173** to show available desks. You can also show `http://127.0.0.1:8080/api/desks` for the backend JSON response; this address contains no simulator key.
+
+The simulator may move desks and power them off during normal operation. For a more predictable exercise, use the manual simulator commands in [SETUP.md](../SETUP.md) with `--no-user-simulation --desk-poweroff-chance 0 --desk-collision-chance 0` instead of running the launcher. Saved collision and power-off settings in `wifi2ble-box-simulator/data/desks_state.json` override those flags; check them with the simulator stopped.
+
+## Save a reading and request a height
+
+In another PowerShell terminal at the repository root:
+
+```powershell
+$env:DESK_API_KEY = (Get-Content wifi2ble-box-simulator/config/api_keys.json -Raw | ConvertFrom-Json)[0]
+$env:DATABASE_URL = 'postgresql://USERNAME:PASSWORD@127.0.0.1:5432/group7_desksystem'
+.\.venv\Scripts\python.exe DeskSystemPROJECT/DeskSystemPROJECT.py show
+.\.venv\Scripts\python.exe DeskSystemPROJECT/DeskSystemPROJECT.py sync
+.\.venv\Scripts\python.exe DeskSystemPROJECT/DeskSystemPROJECT.py move DESK_ID 1000
+```
+
+Replace the database placeholders with your credentials and `DESK_ID` with an available ID printed by `show`. On macOS/Linux, use `.venv/bin/python`.
+
+`show` is read-only. `sync` stores a new snapshot for each available desk. `move` records the requested height and its accepted/failed result; an accepted request also triggers a follow-up reading. Movement is gradual, so that reading may show a height between the starting point and the target.
+
+## Verify PostgreSQL
+
+In pgAdmin's Query Tool, confirm the selected database:
+
+```sql
+SELECT current_database(), current_user;
+```
+
+Then inspect the rows for the desk used in the demo, replacing `REPLACE_WITH_DESK_ID`:
+
+```sql
+SELECT desk_id, name, manufacturer
+FROM desk
+WHERE desk_id = 'REPLACE_WITH_DESK_ID';
+
+SELECT reading_id, desk_id, position_mm, speed_mms, status, recorded_at
+FROM desk_readings
+WHERE desk_id = 'REPLACE_WITH_DESK_ID'
+ORDER BY reading_id DESC
+LIMIT 5;
+
+SELECT command_id, desk_id, target_position_mm, status, requested_at
+FROM desk_commands
+WHERE desk_id = 'REPLACE_WITH_DESK_ID'
+ORDER BY command_id DESC
+LIMIT 5;
+```
+
+Repeated syncs update the desk's identity row and append new readings. They do not overwrite earlier snapshots. The command row keeps the requested target even if the simulator adjusts it to its movement limits.
+
+A successful web API response alone does not demonstrate persistence: the current HTTP routes do not write to PostgreSQL. The saved rows above verify the CLI's database work.
+
+Stop the services with Ctrl+C in the launcher terminal when finished. PostgreSQL stays running. For failure cases and exit codes, see [the workflow guide](sprint2-workflow.md).
