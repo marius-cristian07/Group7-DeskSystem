@@ -143,6 +143,7 @@ def main():
     try:
         python, node = check_setup()
         api_key = read_api_key()
+        database_url = os.environ.get("DATABASE_URL")
         # Only the backend needs application credentials. Vite receives an address.
         common_env = os.environ.copy()
         for variable in ("DESK_API_KEY", "DESK_API_BASE_URL", "DATABASE_URL"):
@@ -150,6 +151,8 @@ def main():
         common_env["PYTHONUNBUFFERED"] = "1"
         common_env["PYTHONIOENCODING"] = "utf-8"
         backend_env = {**common_env, "DESK_API_KEY": api_key, "DESK_API_BASE_URL": f"http://127.0.0.1:{SIMULATOR_PORT}"}
+        if database_url:
+            backend_env["DATABASE_URL"] = database_url
         frontend_env = {**common_env, "VITE_API_BASE_URL": f"http://127.0.0.1:{BACKEND_PORT}"}
         services = [
             (

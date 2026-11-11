@@ -1,15 +1,76 @@
-# HTTP entry point used by React. Uvicorn serves the FastAPI app defined here.
-# Desk routes read live simulator data through Data/desk_api_client.py and return
-# the smaller frontend response. They do not read or save PostgreSQL history.
+# the backend serves live desk data and saves history in the background
+# desk routes read live data and never write to the database
+
+import logging
+import math
+import os
+import threading
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from .Data.desk_api_client import DeskAPIError, get_desk_ids, get_desk
+from .Data.desk_api_client import DeskAPIError, get_desk, get_desk_ids
 from .config import FRONTEND_PORT, get_simulator_config
+from .Domain.desk_workflow import DeskWorkflow, WorkflowError
 
 
-app = FastAPI()
+logger = logging.getLogger(__name__)
+DEFAULT_HISTORY_INTERVAL = 60
+
+
+def _collect_history(stop_event, interval):
+    # save readings without waiting for someone to open the dashboard
+    base_url, api_key = get_simulator_config()
+    workflow = DeskWorkflow(base_url, api_key)
+
+    while not stop_event.is_set():
+        try:
+            report = workflow.sync_all()
+            for item in report.items:
+                if item.error:
+                    logger.warning("desk %s history failed: %s", item.desk_id, item.error)
+            logger.info("desk history saved %s readings; %s failed", report.saved, report.failed)
+        except WorkflowError as error:
+            logger.warning("desk history collection failed: %s", error)
+        except Exception:
+            logger.exception("desk history collection failed unexpectedly")
+        stop_event.wait(interval)
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    # keep the collector tied to the backend lifetime
+    stop_event = threading.Event()
+    collector = None
+    if os.environ.get("DATABASE_URL", "").strip():
+        try:
+            interval = float(os.environ.get(
+                "DESK_HISTORY_INTERVAL_SECONDS", str(DEFAULT_HISTORY_INTERVAL)
+            ))
+        except ValueError:
+            raise ValueError("DESK_HISTORY_INTERVAL_SECONDS must be a positive number") from None
+        if not math.isfinite(interval) or interval <= 0:
+            raise ValueError("DESK_HISTORY_INTERVAL_SECONDS must be a positive number")
+        collector = threading.Thread(
+            target=_collect_history,
+            args=(stop_event, interval),
+            name="desk_history_collector",
+            daemon=True,
+        )
+        collector.start()
+    else:
+        logger.info("desk history collection is off because DATABASE_URL is not set")
+
+    try:
+        yield
+    finally:
+        if collector is not None:
+            stop_event.set()
+            collector.join(timeout=5)
+
+
+app = FastAPI(lifespan=lifespan)
 
 # Let the React development servers call this backend from another origin.
 app.add_middleware(

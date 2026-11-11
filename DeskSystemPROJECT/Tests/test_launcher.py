@@ -29,7 +29,7 @@ class LauncherTests(unittest.TestCase):
         self.ready = self.enterContext(patch.object(run, "wait_until_ready"))
         self.stop = self.enterContext(patch.object(run, "stop_processes"))
 
-    def test_ctrl_c_stops_all_services_and_only_backend_gets_key(self):
+    def test_only_backend_gets_application_credentials(self):
         # Interrupt the monitoring loop as if Ctrl+C had been pressed.
         with patch.dict(os.environ, {"DESK_API_KEY": "private-key", "DATABASE_URL": "private-db"}), \
              patch.object(run.time, "sleep", side_effect=KeyboardInterrupt):
@@ -37,8 +37,8 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual([args[0] for args in self.started], ["simulator", "backend", "frontend"])
         self.assertEqual(len(self.stop.call_args.args[0]), 3)
         for name, _, _, env, _ in self.started:
-            self.assertNotIn("DATABASE_URL", env)
             self.assertEqual(env.get("DESK_API_KEY"), "private-key" if name == "backend" else None)
+            self.assertEqual(env.get("DATABASE_URL"), "private-db" if name == "backend" else None)
         self.assertEqual(self.started[1][3]["DESK_API_BASE_URL"], "http://127.0.0.1:8000")
         self.assertEqual(self.started[2][3]["VITE_API_BASE_URL"], "http://127.0.0.1:8080")
         self.assertIn("--strictPort", self.started[2][1])
