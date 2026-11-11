@@ -179,7 +179,7 @@ To set up the database:
 
 The Python saver reads the PostgreSQL connection URL from the `DATABASE_URL` environment variable. Python does not load `.env` files automatically. Database credentials must not be committed to Git. See [the database setup guide](../database/SETUP.md) for the commands.
 
-The CLI `sync` command saves desk readings. The CLI `move` command records a movement request and saves a follow-up reading if the simulator accepts it. The CLI `show` command and the HTTP desk endpoints only fetch live data; they do not write readings. See [the workflow guide](sprint2-workflow.md) and [project setup](../SETUP.md).
+The CLI `sync` command saves desk readings. The CLI `move` command records a movement request and saves a follow-up reading if the simulator accepts it. The CLI `show` command and HTTP desk endpoints only fetch live data; they do not write readings. While the backend runs with `DATABASE_URL` set, its history collector saves a snapshot on startup and every 60 seconds by default. See [the workflow guide](sprint2-workflow.md), [project setup](../SETUP.md), and [database setup](../database/SETUP.md).
 
 ## Testing
 

@@ -1,11 +1,14 @@
 # Checks the routes and response format that React relies on.
 # TestClient runs FastAPI in-process; simulator calls are mocked, so no servers are needed.
 
+import os
+import threading
 import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from DeskSystemPROJECT.Domain.desk_workflow import SyncReport
 from DeskSystemPROJECT.server import app
 from DeskSystemPROJECT.Data.desk_api_client import DeskAPIError
 from DeskSystemPROJECT.Tests.fixtures import sample_desk
@@ -13,14 +16,39 @@ from DeskSystemPROJECT.Tests.fixtures import sample_desk
 
 class ServerTests(unittest.TestCase):
     def setUp(self):
+        self.enterContext(patch.dict(os.environ, {"DATABASE_URL": ""}))
+        self.enterContext(patch.dict(os.environ, {"DESK_API_KEY": "test-key"}))
         # Call FastAPI in-process; enterContext also closes the client after each test.
         self.client = self.enterContext(TestClient(app))
-        self.enterContext(patch.dict("os.environ", {"DESK_API_KEY": "test-key"}))
 
     def test_health_returns_ok(self):
         response = self.client.get("/api/health")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"status": "ok"})
+
+    def test_history_collection_repeats_without_http_requests(self):
+        collected_twice = threading.Event()
+        calls = []
+
+        class Workflow:
+            def __init__(self, base_url, api_key):
+                pass
+
+            def sync_all(self):
+                calls.append(True)
+                if len(calls) == 2:
+                    collected_twice.set()
+                return SyncReport([])
+
+        settings = {
+            "DATABASE_URL": "test-database",
+            "DESK_API_KEY": "test-key",
+            "DESK_HISTORY_INTERVAL_SECONDS": "0.01",
+        }
+        with patch.dict(os.environ, settings), patch(
+            "DeskSystemPROJECT.server.DeskWorkflow", Workflow
+        ), TestClient(app):
+            self.assertTrue(collected_twice.wait(timeout=1))
 
     def test_list_and_detail_keep_the_frontend_contract(self):
         record = sample_desk()

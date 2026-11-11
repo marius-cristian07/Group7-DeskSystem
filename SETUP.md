@@ -13,7 +13,7 @@ npm --prefix frontend install
 
 On macOS/Linux, the virtual environment interpreter is `.venv/bin/python` instead of `.venv\Scripts\python.exe`.
 
-PostgreSQL is needed only for the CLI commands that save data (`sync` and `move`). Configure it separately using [database/SETUP.md](database/SETUP.md). The web app reads live simulator data and does not need a database.
+PostgreSQL is optional for the live dashboard. Configure it using [database/SETUP.md](database/SETUP.md) to collect desk history automatically or use CLI commands that save data (`sync` and `move`).
 
 ## Start and stop
 
@@ -40,6 +40,7 @@ Stop any servers you previously started by hand before running the launcher. It 
 2. Wait a few seconds. The update time should advance as the page refreshes.
 3. Open `http://127.0.0.1:8080/api/health`; it should return `{"status":"ok"}`.
 4. Open `http://127.0.0.1:8080/api/desks`; it should return an array of desks.
+5. With `DATABASE_URL` set and the schema installed, the backend saves desk readings on startup and every 60 seconds.
 
 The number of available desks can change because the simulator temporarily powers desks off. A desk disappearing during the backend's list request can still produce a 502 response; the frontend retries automatically. That API behavior is unchanged by this refactor.
 
@@ -49,7 +50,8 @@ The launcher uses the three local ports above and supplies the matching addresse
 
 - `DESK_API_BASE_URL`: simulator address used by Python; default `http://127.0.0.1:8000`.
 - `DESK_API_KEY`: simulator key used by Python. The launcher reads the local key automatically.
-- `DATABASE_URL`: PostgreSQL connection used by CLI `sync` and `move`.
+- `DATABASE_URL`: PostgreSQL connection used by automatic history collection and CLI `sync` and `move`.
+- `DESK_HISTORY_INTERVAL_SECONDS`: seconds between saved snapshots; default `60`.
 - `VITE_API_BASE_URL`: backend address used by React when starting Vite manually; default `http://127.0.0.1:8080`.
 
 Python does not automatically load the root `.env` file. The root `.env.example` documents server-side values. Vite loads `frontend/.env.local` when used manually; copy `frontend/.env.example` if you need a different backend address. Every `VITE_` value can appear in browser code, so it must never contain the simulator key or a database password.
@@ -87,6 +89,7 @@ Backend, from the repository root:
 
 ```powershell
 $env:DESK_API_KEY = (Get-Content wifi2ble-box-simulator/config/api_keys.json -Raw | ConvertFrom-Json)[0]
+$env:DATABASE_URL = 'postgresql://USERNAME:PASSWORD@127.0.0.1:5432/group7_desksystem'
 .\.venv\Scripts\python.exe -m uvicorn DeskSystemPROJECT.server:app --host 127.0.0.1 --port 8080
 ```
 

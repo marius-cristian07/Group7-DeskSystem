@@ -39,7 +39,7 @@ For bash/zsh:
 export DATABASE_URL='postgresql://USERNAME:PASSWORD@127.0.0.1:5432/group7_desksystem'
 ```
 
-The application reads `DATABASE_URL` from the environment for `sync` and `move`; `show` only needs the simulator API key. It does not load `.env` files automatically. Avoid pasting a real URL into screenshots, issues, or chat.
+The backend uses `DATABASE_URL` for automatic history collection, and the CLI uses it for `sync` and `move`. `show` only needs the simulator API key. The application does not load `.env` files automatically. Avoid pasting a real URL into screenshots, issues, or chat.
 
 ## 3. Apply the schema
 
@@ -61,13 +61,16 @@ The schema is in [`database/001_initial_schema.sql`](001_initial_schema.sql). Ap
 
 ## 4. Run the current simulator and application
 
-Complete [project setup](../SETUP.md) once, then start the simulator, backend, and React from the repository root:
+Complete [project setup](../SETUP.md) once. To collect history automatically, set `DATABASE_URL` in the same terminal before starting the simulator, backend, and React from the repository root:
 
 ```powershell
+$env:DATABASE_URL = 'postgresql://USERNAME:PASSWORD@127.0.0.1:5432/group7_desksystem'
 python run.py
 ```
 
-PostgreSQL remains your existing local service. Open a second terminal at the repository root for these optional database exercises and set its credentials:
+PostgreSQL remains your existing local service. The backend saves one reading per available desk at startup and repeats every 60 seconds. Set `DESK_HISTORY_INTERVAL_SECONDS` to change the interval. The launcher passes `DATABASE_URL` only to the backend. Without it, the dashboard still works but history collection is off.
+
+Open a second terminal at the repository root for optional CLI database exercises and set its credentials:
 
 ```powershell
 $env:DESK_API_KEY = (Get-Content wifi2ble-box-simulator/config/api_keys.json -Raw | ConvertFrom-Json)[0]
