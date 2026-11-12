@@ -13,6 +13,7 @@ Purpose   : KAN-11 Created a method to set the desk height
 """
 
 import json
+from http.client import HTTPException
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
@@ -55,7 +56,7 @@ def _request_json(request, timeout, error_descriptions=None):
         raise DeskAPIError(
             f"HTTP {error.code}: {description}", status_code=error.code,
         ) from None
-    except (URLError, TimeoutError, OSError):
+    except (URLError, TimeoutError, OSError, HTTPException):
         raise DeskAPIError("Connection failed or request timed out") from None
     except (ValueError, UnicodeError):
         raise DeskAPIError("API returned invalid JSON") from None

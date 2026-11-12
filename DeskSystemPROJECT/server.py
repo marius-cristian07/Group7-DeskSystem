@@ -1,5 +1,5 @@
 # the backend serves live desk data and saves history in the background
-# desk routes read live data and never write to the database
+# GET desk routes read live data; POST height runs the shared movement workflow.
 
 import logging
 import math
@@ -8,7 +8,7 @@ import threading
 from contextlib import asynccontextmanager
 
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from .Data.desk_api_client import DeskAPIError, get_desk, get_desk_ids
@@ -17,6 +17,7 @@ from .Domain.desk_workflow import DeskWorkflow, WorkflowError
 from .Data.database import DatabaseError
 from .Data.desk_command_repository import desk_exists
 from .Data.desk_history_repository import get_desk_readings, get_desk_commands
+from .movement_api import HeightRequest, HeightResponse
 
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,36 @@ async def lifespan(_app):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+def get_movement_workflow():
+    """Provide the same workflow used by the CLI; replaceable in API tests."""
+    return DeskWorkflow(*get_simulator_config())
+
+
+@app.post("/api/desks/{desk_id}/height", response_model=HeightResponse)
+def request_desk_height(
+    desk_id: str,
+    request: HeightRequest,
+    workflow: DeskWorkflow = Depends(get_movement_workflow),
+):
+    """Request one movement. Acceptance does not mean movement has completed.
+
+    Attempted commands return 200 with accepted, failed (rejected), or unknown
+    status, including any separate storage/follow-up failure. Never auto-retry.
+    """
+    try:
+        result = workflow.request_height(desk_id, request.target_position_mm)
+    except WorkflowError as error:
+        errors = {
+            "invalid_input": (422, "Invalid desk identifier or height. Nothing was sent."),
+            "desk_not_found": (404, "Desk not found or unavailable. Nothing was sent."),
+            "simulator_unavailable": (502, "Could not verify the desk with the simulator. Nothing was sent."),
+            "unavailable": (503, "Movement configuration or database is unavailable. Nothing was sent."),
+        }
+        status_code, message = errors[error.reason]
+        raise HTTPException(status_code=status_code, detail=message) from None
+    return HeightResponse.from_result(result)
 
 # Let the React development servers call this backend from another origin.
 app.add_middleware(

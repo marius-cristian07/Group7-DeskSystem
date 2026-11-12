@@ -91,3 +91,14 @@ If any check in step 1 fails, the error ends with "Nothing was sent." and no des
 SELECT command_id, desk_id, target_position_mm, status, requested_at FROM desk_commands ORDER BY command_id;
 SELECT reading_id, desk_id, position_mm, speed_mms, recorded_at FROM desk_readings ORDER BY reading_id DESC LIMIT 10;
 ```
+
+### S4-3 movement validation and uncertain outcomes
+
+Both CLI `move` and HTTP height requests now enforce the simulator's default
+680–1320 mm range. Values outside that range are rejected before movement,
+instead of relying on simulator clamping. The CLI still supports `--wait`.
+
+A request can be `accepted`, `failed` (explicitly rejected), or `unknown`.
+Timeouts and invalid acknowledgements are unknown: the desk may have moved.
+The CLI reports this distinction and exits with code 1 for unknown outcomes
+or partial failures. No movement command is automatically retried.

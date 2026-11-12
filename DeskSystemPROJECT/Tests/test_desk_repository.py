@@ -53,6 +53,10 @@ class RepositoryTests(unittest.TestCase):
             desk_command_repository.save_command("desk-1", 900, "complete")
         self.connect.assert_not_called()
 
+    def test_uncertain_command_can_be_recorded(self):
+        self.assertEqual(desk_command_repository.save_command("desk-1", 1000, "unknown"), 42)
+        self.assertEqual(self.cursor.execute.call_args.args[1], ("desk-1", 1000, "unknown"))
+
     def test_desk_exists_handles_missing_row(self):
         self.cursor.fetchone.return_value = None
         self.assertFalse(desk_command_repository.desk_exists("missing"))
