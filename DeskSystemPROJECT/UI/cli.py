@@ -13,7 +13,7 @@ import argparse
 import sys
 
 from ..config import DEFAULT_BASE_URL, get_simulator_config
-from ..Domain.desk_workflow import STATUS_ACCEPTED, DeskWorkflow, WorkflowError
+from ..Domain.desk_workflow import STATUS_ACCEPTED, STATUS_UNKNOWN, DeskWorkflow, WorkflowError
 
 # The simulator moves desks once per second, so a reading taken at the same
 # instant as the request would still show the desk standing still.
@@ -78,7 +78,8 @@ def build_parser():
         help="request a height for ONE desk (this moves the desk)",
         description=(
             "Request a target height for one desk. The request is saved in "
-            "desk_commands as accepted or failed. If it was accepted, the desk "
+            "desk_commands as accepted, failed, or unknown. Heights must be "
+            "680–1320 mm. If it was accepted, the desk "
             "is read again and a new reading is saved."
         ),
     )
@@ -158,6 +159,9 @@ def run_move(workflow, desk_id, height_mm, wait_s):
                 f"  The desk adjusted the target to {result.accepted_mm} mm "
                 f"(requested {result.requested_mm} mm)."
             )
+    elif result.status == STATUS_UNKNOWN:
+        _error(f"Request UNKNOWN for desk {result.desk_id}: {result.error}")
+        _error("  The desk may have moved. Check its state before issuing another command.")
     else:
         _error(f"Request FAILED for desk {result.desk_id}: {result.error}")
 

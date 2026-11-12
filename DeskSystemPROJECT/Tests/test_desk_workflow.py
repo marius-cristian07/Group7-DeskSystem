@@ -48,15 +48,15 @@ class WorkflowTests(unittest.TestCase):
         self.readings.save_desk.assert_called_once_with(self.record)
 
     def test_accepted_move_records_requested_height_then_reads(self):
-        result = self.workflow.request_height("desk-1", 2000, wait_s=2)
+        result = self.workflow.request_height("desk-1", 1200, wait_s=2)
         self.assertTrue(result.succeeded)
         self.assertEqual(result.accepted_mm, 1320)
-        self.commands.save_command.assert_called_once_with("desk-1", 2000, "accepted")
+        self.commands.save_command.assert_called_once_with("desk-1", 1200, "accepted")
         self.sleep.assert_called_once_with(2)
         self.readings.save_desk.assert_called_once_with(self.record)
 
     def test_failed_move_is_recorded_without_followup(self):
-        self.api.set_desk_height.side_effect = DeskAPIError("offline")
+        self.api.set_desk_height.side_effect = DeskAPIError("rejected", status_code=400)
         result = self.workflow.request_height("desk-1", 900)
         self.assertFalse(result.succeeded)
         self.commands.save_command.assert_called_once_with("desk-1", 900, "failed")

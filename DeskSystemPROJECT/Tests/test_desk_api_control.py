@@ -4,6 +4,7 @@
 import io
 import json
 import unittest
+from http.client import IncompleteRead
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
@@ -11,6 +12,13 @@ from DeskSystemPROJECT.Data import desk_api_client as api
 
 
 class RequestTests(unittest.TestCase):
+    def test_truncated_acknowledgement_is_a_transport_error_without_retry(self):
+        with patch.object(api, "urlopen", side_effect=IncompleteRead(b"partial")) as open_url:
+            with self.assertRaises(api.DeskAPIError) as caught:
+                api.set_desk_height("http://example.test", "key", "desk-1", 1000)
+        self.assertIsNone(caught.exception.status_code)
+        open_url.assert_called_once()
+
     def test_move_keeps_put_url_and_payload(self):
         # BytesIO stands in for the response body, so no real desk is moved.
         with patch.object(api, "urlopen", return_value=io.BytesIO(b'{"position_mm": 1320}')) as open_url:

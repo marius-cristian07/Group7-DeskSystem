@@ -284,3 +284,98 @@ python -m unittest DeskSystemPROJECT.Tests.test_history_api -v
 Run the full Python test suite:
 
 python -m unittest discover -s DeskSystemPROJECT/Tests
+
+## Individual Desk Control (S4-3)
+
+`POST /api/desks/{desk_id}/height`
+
+Requests one explicit movement through the same `DeskWorkflow.request_height`
+used by the CLI. It performs no scheduling, group movement, or automatic retry.
+
+Request body:
+
+```json
+{"target_position_mm": 1000}
+```
+
+The permitted range is **680–1320 mm inclusive**, matching the simulator's
+current default travel limits. This policy is shared with the CLI in
+`Domain/desk_workflow.py`. JSON booleans, strings, floats, null, missing values,
+and unexpected fields are rejected. Identifiers contain 1–128 ASCII letters,
+digits, colons, underscores or hyphens, starting with a letter or digit.
+The workflow verifies configuration, database availability, and current desk
+availability before sending the movement command. Missing desk identities are
+saved before the command is sent.
+
+Example response (HTTP 200):
+
+```json
+{
+  "desk_id": "cd:fb:1a:53:fb:e6",
+  "requested_position_mm": 1000,
+  "accepted_position_mm": 1000,
+  "command_id": 42,
+  "status": "accepted",
+  "error": null,
+  "recording_error": null,
+  "follow_up_error": null,
+  "reading_id": 123
+}
+```
+
+`accepted` means the simulator acknowledged a target; it does **not** mean the
+desk reached it. The accepted target can differ from the requested height.
+The follow-up snapshot is taken immediately and may still show the old height.
+Read the live desk endpoint to observe subsequent movement.
+
+Attempted commands return HTTP 200 with a structured outcome:
+
+- `accepted`: a valid target acknowledgement was received.
+- `failed`: an explicit rejection was received (HTTP 400, 401, 403, 404, 405 or 422).
+- `unknown`: acceptance could not be established, for example after a timeout,
+  server error, or malformed acknowledgement. The desk may have moved.
+
+All three outcomes are recorded in `desk_commands` when storage succeeds.
+`command_id` is null if recording fails; `recording_error` describes that
+failure separately. An accepted command also attempts a follow-up reading;
+`reading_id` is null and `follow_up_error` is populated if that step fails.
+Acceptance remains `accepted` even if either storage step fails. HTTP errors
+and result messages never include raw database errors or credentials.
+The existing TEXT status column supports `unknown` without a schema migration.
+
+Before a movement command is sent, validation errors return 422, an unavailable
+or missing desk returns 404, a simulator verification failure returns 502,
+and configuration/database failures return 503. These preflight failures send
+no movement command. Once a command has been attempted, inspect the response
+body rather than treating HTTP 200 as proof of acceptance or completed motion.
+
+Do not automatically retry this POST after an uncertain result or a lost HTTP
+response. It is not idempotent; check live state and request history first.
+No movement retry is performed by the backend or simulator client.
+
+Try it in Swagger UI at `http://127.0.0.1:8080/docs`, or in PowerShell:
+
+```powershell
+Invoke-RestMethod -Method Post `
+  -Uri 'http://127.0.0.1:8080/api/desks/DESK_ID/height' `
+  -ContentType 'application/json' `
+  -Body '{"target_position_mm":1000}'
+```
+
+Start the backend with `DATABASE_URL`, the database schema, and simulator
+configuration as described in `database/SETUP.md`. The launcher supplies the
+simulator key. This sprint adds the backend contract; dashboard controls can
+call it when implemented.
+
+Validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s DeskSystemPROJECT/Tests
+$env:DESK_RUN_MOVEMENT_TESTS = '1'
+.\.venv\Scripts\python.exe -m unittest DeskSystemPROJECT.Tests.test_movement_integration -v
+Remove-Item Env:DESK_RUN_MOVEMENT_TESTS
+```
+
+The isolated integration check runs the real simulator HTTP handler and desk
+model on a temporary port with test storage. It verifies one desk moves and
+the other remains unchanged; it does not verify a live PostgreSQL write.

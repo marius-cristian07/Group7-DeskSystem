@@ -9,7 +9,8 @@ from .desk_identity import upsert_desk
 
 STATUS_ACCEPTED = "accepted"
 STATUS_FAILED = "failed"
-VALID_STATUSES = (STATUS_ACCEPTED, STATUS_FAILED)
+STATUS_UNKNOWN = "unknown"
+VALID_STATUSES = (STATUS_ACCEPTED, STATUS_FAILED, STATUS_UNKNOWN)
 
 
 def desk_exists(desk_id):

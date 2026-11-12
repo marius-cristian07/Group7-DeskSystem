@@ -2,18 +2,39 @@
 # and move requests a height, records the outcome, then takes a follow-up reading.
 # API and SQL details live in Data; this file returns result objects for UI/cli.py to print.
 
+import re
 import time
 from dataclasses import dataclass
 from typing import List, Optional
 
 from ..Data import desk_api_client, desk_command_repository, desk_repository
 from ..Data.desk_api_client import DeskAPIError
-from ..Data.desk_command_repository import STATUS_ACCEPTED, STATUS_FAILED
+from ..Data.desk_command_repository import STATUS_ACCEPTED, STATUS_FAILED, STATUS_UNKNOWN
 from ..Data.database import DatabaseError, get_database_connection
 
 
 class WorkflowError(Exception):
     """A command was stopped BEFORE anything was sent to a desk."""
+
+    def __init__(self, message, reason="unavailable"):
+        super().__init__(message)
+        self.reason = reason
+
+
+# Match the simulator's default travel range. Shared by HTTP and CLI callers.
+MIN_HEIGHT_MM = 680
+MAX_HEIGHT_MM = 1320
+
+
+def validate_movement(desk_id, target_mm):
+    """Validate user input before configuration, storage, or simulator access."""
+    if not isinstance(desk_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9:_-]{0,127}", desk_id):
+        raise WorkflowError("Invalid desk identifier", reason="invalid_input")
+    if type(target_mm) is not int or not MIN_HEIGHT_MM <= target_mm <= MAX_HEIGHT_MM:
+        raise WorkflowError(
+            f"Target height must be a whole number from {MIN_HEIGHT_MM} to {MAX_HEIGHT_MM} mm",
+            reason="invalid_input",
+        )
 
 
 # These result classes carry data and per-step errors back to the CLI.
@@ -63,7 +84,7 @@ class MoveResult:
     """What happened to one movement request."""
     desk_id: str
     requested_mm: int
-    status: str                          # "accepted" or "failed"
+    status: str                          # "accepted", "failed" (rejected), or "unknown"
     accepted_mm: Optional[int] = None    # target the desk confirmed (may differ)
     error: Optional[str] = None          # why the API request failed
     command_id: Optional[int] = None     # row in desk_commands
@@ -201,7 +222,9 @@ class DeskWorkflow:
         try:
             desk_id = self._prepare_move(desk_id, target_mm)
         except WorkflowError as error:
-            raise WorkflowError(f"{_sentence(str(error))} Nothing was sent.") from None
+            raise WorkflowError(
+                f"{_sentence(str(error))} Nothing was sent.", error.reason,
+            ) from None
 
         result = MoveResult(desk_id, target_mm, STATUS_FAILED)
 
@@ -213,6 +236,10 @@ class DeskWorkflow:
             result.accepted_mm = _read_accepted_height(response)
             result.status = STATUS_ACCEPTED
         except DeskAPIError as error:
+            # Only explicit client-error responses establish rejection. A timeout,
+            # server error or unreadable acknowledgement may follow a real move.
+            if error.status_code not in (400, 401, 403, 404, 405, 422):
+                result.status = STATUS_UNKNOWN
             result.error = _text(error)
 
         # 2. Record it, whatever the outcome.
@@ -232,13 +259,7 @@ class DeskWorkflow:
 
     def _prepare_move(self, desk_id, target_mm):
         """Everything that must be true BEFORE a desk is sent a request."""
-        if not isinstance(desk_id, str) or not desk_id.strip():
-            raise WorkflowError("Desk ID cannot be empty")
-        desk_id = desk_id.strip()
-        if type(target_mm) is not int or target_mm <= 0:
-            raise WorkflowError(
-                "Target height must be a positive whole number of millimetres"
-            )
+        validate_movement(desk_id, target_mm)
         self._check_config()
         self._check_database()
         self._ensure_desk_is_stored(desk_id)
@@ -246,20 +267,20 @@ class DeskWorkflow:
 
     def _ensure_desk_is_stored(self, desk_id):
         """
-        desk_commands points to desk(desk_id), so the desk must be stored first.
-        If it is not (never synchronised), fetch it and store just the desk row.
-        If that is impossible, stop BEFORE sending anything, so a request is only
-        sent when the database is reachable and the desk can be referenced.
+        Verify the desk is available and ensure its identity is stored first.
+        desk_commands references desk(desk_id); save missing identities without
+        adding a reading. Any failure here prevents sending a movement request.
         """
         try:
+            # Check current availability even when the identity is already stored.
+            record = self.api.get_desk(self.base_url, self.api_key, desk_id)
             if self.commands.desk_exists(desk_id):
                 return
-            record = self.api.get_desk(self.base_url, self.api_key, desk_id)
             self.commands.save_desk_identity(record)
         except DeskAPIError as error:
             raise WorkflowError(
-                f"Desk {desk_id} is not in the database yet and could not be "
-                f"fetched from the API ({_text(error)})"
+                f"Desk {desk_id} could not be fetched from the API ({_text(error)})",
+                reason="desk_not_found" if error.status_code == 404 else "simulator_unavailable",
             ) from None
         except DatabaseError as error:
             raise WorkflowError(_text(error)) from None
