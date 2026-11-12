@@ -172,3 +172,115 @@ Successful checks:
 The endpoints return live simulator data. They do not read desk history from PostgreSQL.
 
 Automated route checks run with the Python test suite documented in [README.md](../README.md#checks). The optional launcher integration check uses temporary simulator data and verifies a height change through the live backend.
+
+
+## Desk History API (S4-2)
+
+Historical data is read from PostgreSQL, not from the live simulator.
+Both endpoints remain available when the simulator is offline,
+provided the database is accessible.
+
+### Get Desk Readings
+
+GET /api/desks/{desk_id}/history
+
+Optional query parameters:
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| start | ISO 8601 datetime | Inclusive start, timezone required |
+| end | ISO 8601 datetime | Inclusive end, timezone required |
+| limit | integer | Default 50, minimum 1, maximum 1000 |
+
+Readings are ordered newest first by recorded_at, then reading_id.
+
+Example response:
+
+```json
+{
+  "desk_id": "cd:fb:1a:53:fb:e6",
+  "readings": [
+    {
+      "reading_id": 1,
+      "desk_id": "cd:fb:1a:53:fb:e6",
+      "recorded_at": "2026-10-27T10:03:27.833163+01:00",
+      "position_mm": 1100,
+      "speed_mms": 0,
+      "status": "Normal",
+      "errors": [
+        {
+          "error_index": 0,
+          "time_s": 2695,
+          "error_code": 93
+        }
+      ]
+    }
+  ]
+}
+```
+
+Every reading contains an errors array, which can be empty.
+
+The time_s value comes from the simulator and is not a
+wall-clock timestamp. Use recorded_at for calendar time.
+
+### Get Desk Commands
+
+GET /api/desks/{desk_id}/commands
+
+Supports the same start, end and limit parameters.
+
+Commands are ordered newest first by requested_at,
+then command_id.
+
+Example response:
+
+```json
+{
+  "desk_id": "cd:fb:1a:53:fb:e6",
+  "commands": [
+    {
+      "command_id": 1,
+      "desk_id": "cd:fb:1a:53:fb:e6",
+      "requested_at": "2026-10-27T10:07:36.380487+01:00",
+      "target_position_mm": 1200,
+      "status": "pending"
+    }
+  ]
+}
+```
+
+A command records the requested height and status.
+It does not prove that the desk reached the requested height.
+
+### HTTP Status Codes
+
+| Code | Meaning |
+| --- | --- |
+| 200 | Request successful, including empty history |
+| 404 | Desk does not exist in PostgreSQL |
+| 422 | Invalid date, date range or limit |
+| 503 | History database unavailable |
+
+An existing desk without records in the selected period
+returns HTTP 200 with an empty readings or commands array.
+
+### Database Requirements
+
+Set DATABASE_URL to connect the backend to PostgreSQL.
+
+The history database uses:
+- database/001_initial_schema.sql
+- database/002_history_indexes.sql
+
+Database credentials must not be committed to GitHub.
+
+### Testing
+
+Run the History API unit tests:
+
+python -m unittest DeskSystemPROJECT.Tests.test_history_api -v
+
+Run the full Python test suite:
+
+python -m unittest discover -s DeskSystemPROJECT/Tests

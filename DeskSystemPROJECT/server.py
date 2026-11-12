@@ -7,12 +7,16 @@ import os
 import threading
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from datetime import datetime
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from .Data.desk_api_client import DeskAPIError, get_desk, get_desk_ids
 from .config import FRONTEND_PORT, get_simulator_config
 from .Domain.desk_workflow import DeskWorkflow, WorkflowError
+from .Data.database import DatabaseError
+from .Data.desk_command_repository import desk_exists
+from .Data.desk_history_repository import get_desk_readings, get_desk_commands
 
 
 logger = logging.getLogger(__name__)
@@ -152,3 +156,76 @@ def get_desk_state(desk_id: str):
         if error.status_code == 404:
             raise HTTPException(status_code=404, detail=f"Desk {desk_id} not found") from error
         raise HTTPException(status_code=502, detail=str(error)) from error
+
+@app.get("/api/desks/{desk_id}/history")
+def get_desk_history(
+    desk_id: str,
+    start: datetime | None = Query(
+        default=None,
+    ),
+    end: datetime | None = Query(
+        default=None,
+    ),
+    limit: int = Query(
+        default=50,
+        ge=1,
+        le=1000,
+    ),
+):
+    """Return saved readings for a desk, from PostgreSQL"""
+    if start is not None and start.utcoffset() is None:
+        raise HTTPException(status_code=422, detail="start must be timezone-aware")
+    if end is not None and end.utcoffset() is None:
+        raise HTTPException(status_code=422, detail="end must be timezone-aware")
+
+    if start is not None and end is not None and start > end:
+        raise HTTPException(status_code=422, detail="start must be before end")
+    try:
+        if not desk_exists(desk_id):
+            raise HTTPException(status_code=404, detail=f"Desk {desk_id} not found")
+        readings = get_desk_readings(desk_id, start=start, end=end, limit=limit)
+
+    except DatabaseError:
+        logger.exception("database error while fetching desk history")
+        raise HTTPException(status_code=503, detail="Database error while fetching desk history") from None
+    return{
+        "desk_id": desk_id,
+        "readings": readings,
+    }
+
+
+@app.get("/api/desks/{desk_id}/commands")
+def get_desk_command_history(
+    desk_id: str,
+    start: datetime | None = Query(
+        default=None,
+    ),
+    end: datetime | None = Query(
+        default=None,
+    ),
+    limit: int = Query(
+        default=50,
+        ge=1,
+        le=1000,
+    ),
+):
+    """Return saved command history for a desk, from PostgreSQL"""
+    if start is not None and start.utcoffset() is None:
+        raise HTTPException(status_code=422, detail="start must be timezone-aware")
+    if end is not None and end.utcoffset() is None:
+        raise HTTPException(status_code=422, detail="end must be timezone-aware")
+
+    if start is not None and end is not None and start > end:
+        raise HTTPException(status_code=422, detail="start must be before end")
+    try:
+        if not desk_exists(desk_id):
+            raise HTTPException(status_code=404, detail=f"Desk {desk_id} not found")
+        commands = get_desk_commands(desk_id, start=start, end=end, limit=limit)
+
+    except DatabaseError:
+        logger.exception("database error while fetching desk command history")
+        raise HTTPException(status_code=503, detail="Database error while fetching desk command history") from None
+    return{
+        "desk_id": desk_id,
+        "commands": commands,
+    }
