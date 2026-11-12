@@ -49,3 +49,15 @@ Remove-Item Env:DESK_RUN_LIVE_TESTS
 ```
 
 This check starts the real services on their usual ports with temporary simulator data, changes a test desk height, and verifies shutdown. It leaves your simulator data and PostgreSQL alone.
+
+## Running commands (In the second terminal, the terminal where you ran python run.py needs to be turned on)
+
+$env:DESK_API_KEY = (Get-Content .\wifi2ble-box-simulator\config\api_keys.json | ConvertFrom-Json)[0]
+$env:DESK_API_BASE_URL = "http://127.0.0.1:8000"
+$env:DATABASE_URL = "postgresql://postgres:YOUR_PASSWORD@127.0.0.1:5432/group7_desksystem"
+
+Example:
+```powershell	
+python DeskSystemPROJECT/DeskSystemPROJECT.py move 91:17:a4:3b:f4:4d 1000
+```
+
