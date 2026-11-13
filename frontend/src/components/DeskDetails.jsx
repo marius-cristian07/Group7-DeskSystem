@@ -9,6 +9,7 @@
 import { useEffect, useRef } from 'react';
 import { getDeskState, getMovement } from '../utils/deskStatus';
 import StateBadge from './StateBadge';
+import DeskHistory from './DeskHistory';
 
 export default function DeskDetails({ deskId, desk, lastUpdated, onClose }) {
   const dialogRef = useRef(null);
@@ -75,6 +76,10 @@ export default function DeskDetails({ deskId, desk, lastUpdated, onClose }) {
                 <dd>{desk.is_anti_collision ? 'Active' : 'Not active'}</dd>
               </div>
             </dl>
+
+            {/* Saved history (S4-4). It loads on its own, so if the history service fails,
+                the live details above keep working. */}
+            <DeskHistory key={deskId} deskId={deskId} deskName={desk.name} />
 
             <h3>Recent errors</h3>
             {desk.last_errors.length === 0 ? (

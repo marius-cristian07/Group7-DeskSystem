@@ -1,0 +1,289 @@
+/* Styles for the desk-history section (S4-4). DeskHistory.jsx imports this file.
+   It uses the colour variables from dashboard.css, so light and dark mode follow
+   the rest of the page. Selectors start with .desk-dialog where they would otherwise
+   tie with the dialog's own heading and table rules in dashboard.css. */
+
+.desk-dialog .history {
+  margin-top: 24px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.desk-dialog .history h3 {
+  margin-top: 16px;
+}
+
+.desk-dialog .history h4 {
+  margin: 20px 0 6px;
+  font-size: 0.95rem;
+}
+
+/* ---------- controls ---------- */
+
+.history__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 8px;
+}
+
+.range-picker {
+  display: inline-flex;
+}
+
+/* 44px is the smallest comfortable touch target. */
+.range-picker button,
+.history__refresh {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.range-picker button:first-child {
+  border-radius: 8px 0 0 8px;
+}
+
+.range-picker button:last-child {
+  margin-left: -1px;
+  border-radius: 0 8px 8px 0;
+}
+
+.history__refresh {
+  border-radius: 8px;
+}
+
+/* The chosen range is bold and tinted, so it is not shown by colour alone. */
+.range-picker button[aria-pressed='true'] {
+  position: relative;
+  border-color: var(--moving);
+  background: var(--moving-bg);
+  color: var(--moving-text);
+  font-weight: 700;
+}
+
+.range-picker button:focus-visible,
+.history__refresh:focus-visible,
+.history-table:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.history__updated {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* ---------- messages ---------- */
+
+.history__state {
+  margin: 8px 0;
+  padding: 14px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+}
+
+.history__state--error {
+  border-style: solid;
+  border-color: var(--error);
+  background: var(--error-tint);
+  color: var(--text);
+}
+
+/* The technical reason from the backend, on its own line under the explanation. */
+.history__detail {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.history__notice {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--moving);
+  border-radius: 8px;
+  background: var(--moving-bg);
+  color: var(--moving-text);
+  font-size: 0.9rem;
+}
+
+.history__notice--error {
+  border-color: var(--error);
+  background: var(--error-tint);
+  color: var(--text);
+}
+
+/* ---------- chart ---------- */
+
+.history-chart {
+  margin: 8px 0 0;
+}
+
+.history-chart svg {
+  display: block;
+  max-width: 100%;
+  overflow: visible;
+}
+
+.history-chart text {
+  fill: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-chart .history-chart__axis-title {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.history-chart__grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.history-chart__axis {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+
+.history-chart__line {
+  fill: none;
+  stroke: var(--moving);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.history-chart__dot {
+  fill: var(--moving);
+  stroke: var(--surface);
+  stroke-width: 1;
+}
+
+.history-chart__hatch {
+  stroke: var(--muted);
+  stroke-opacity: 0.5;
+  stroke-width: 1.5;
+}
+
+.history-chart__caption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+  font-size: 0.9rem;
+}
+
+.history-chart__caption span:last-child {
+  color: var(--muted);
+}
+
+.history-chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 4px;
+  border-radius: 2px;
+  vertical-align: -2px;
+}
+
+.swatch--reading {
+  border-radius: 50%;
+  background: var(--moving);
+}
+
+.swatch--gap {
+  border: 1px solid var(--border);
+  background: repeating-linear-gradient(45deg, transparent 0 3px, color-mix(in srgb, var(--muted) 55%, transparent) 3px 4.5px);
+}
+
+/* ---------- movement-request table ---------- */
+
+.history-table {
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.desk-dialog .history-table table {
+  font-size: 0.9rem;
+}
+
+.desk-dialog .history-table th,
+.desk-dialog .history-table td {
+  padding: 8px 6px;
+}
+
+.desk-dialog .history-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.desk-dialog .history-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.outcome {
+  display: inline-block;
+  padding: 2px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.outcome--accepted {
+  background: var(--idle-bg);
+  color: var(--idle-text);
+}
+
+.outcome--failed {
+  background: var(--error-bg);
+  color: var(--error-text);
+}
+
+.outcome--unknown,
+.outcome--other {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.history-meanings {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* A narrow phone gets a little less padding so the table fits without side-scrolling. */
+@media (max-width: 400px) {
+  .desk-dialog .history-table th,
+  .desk-dialog .history-table td {
+    padding: 8px 4px;
+  }
+}
