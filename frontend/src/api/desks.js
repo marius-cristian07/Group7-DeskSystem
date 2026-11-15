@@ -13,7 +13,7 @@
  */
 
 // Remove trailing slashes so joining the address and route gives one slash.
-const backendUrl = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8080').replace(/\/+$/, '');
+const backendUrl = (import.meta.env?.VITE_API_BASE_URL || 'http://127.0.0.1:8080').replace(/\/+$/, '');
 
 // signal is optional: the hook passes an AbortController's signal so it can
 // stop a request when the user leaves the page. Callers may omit the options.

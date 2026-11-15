@@ -460,3 +460,7 @@ Thumbs.db
 Desktop.ini
 .idea/
 .history/
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
