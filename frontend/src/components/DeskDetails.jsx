@@ -10,6 +10,7 @@ import { useEffect, useRef } from 'react';
 import { getDeskState, getMovement } from '../utils/deskStatus';
 import StateBadge from './StateBadge';
 import DeskHistory from './DeskHistory';
+import HeightControl from './HeightControl';
 
 export default function DeskDetails({ deskId, desk, lastUpdated, onClose }) {
   const dialogRef = useRef(null);
@@ -76,6 +77,8 @@ export default function DeskDetails({ deskId, desk, lastUpdated, onClose }) {
                 <dd>{desk.is_anti_collision ? 'Active' : 'Not active'}</dd>
               </div>
             </dl>
+
+            <HeightControl key={deskId} desk={desk} />
 
             {/* Saved history (S4-4). It loads on its own, so if the history service fails,
                 the live details above keep working. */}

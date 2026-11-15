@@ -17,10 +17,10 @@ const backendUrl = (import.meta.env?.VITE_API_BASE_URL || 'http://127.0.0.1:8080
 
 // signal is optional: the hook passes an AbortController's signal so it can
 // stop a request when the user leaves the page. Callers may omit the options.
-export async function getJson(path, { signal } = {}) {
+export async function getJson(path, { signal, ...requestOptions } = {}) {
   let response;
   try {
-    response = await fetch(`${backendUrl}${path}`, { signal });
+    response = await fetch(`${backendUrl}${path}`, { ...requestOptions, signal });
   } catch (error) {
     if (error.name === 'AbortError') throw error;
     throw new Error('Cannot connect to the Python backend. Check that it is running.');
@@ -61,4 +61,26 @@ export function getDesk(deskId, options) {
  * @returns {Promise<{status: string}>} */
 export function getHealth(options) {
   return getJson('/api/health', options);
+}
+
+/** Send once: transport errors can happen after the desk accepted the command. */
+export async function requestDeskHeight(deskId, target) {
+  if (!Number.isInteger(target) || target < 680 || target > 1320) {
+    throw new Error('Enter a number between 680 and 1320 mm.');
+  }
+  let result;
+  try {
+    result = await getJson(`/api/desks/${encodeURIComponent(deskId)}/height`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_position_mm: target }),
+    });
+  } catch (error) {
+    if (error.status && error.status < 500) throw error;
+    throw new Error(`${error.message} Acceptance could not be confirmed. Check the desk height before sending a request.`);
+  }
+  if (!['accepted', 'failed', 'unknown'].includes(result?.status)) {
+    throw new Error('Acceptance could not be confirmed. Check the desk height before sending a request.');
+  }
+  return result;
 }
