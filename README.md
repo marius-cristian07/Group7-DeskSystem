@@ -25,6 +25,7 @@ Open **http://127.0.0.1:5173**. The launcher runs all three services in this ter
 - `DeskSystemPROJECT/server.py`: HTTP routes and frontend response formatting.
 - `DeskSystemPROJECT/UI/`: command parsing and terminal output.
 - `DeskSystemPROJECT/Domain/`: the existing show, sync, and move workflows.
+- `DeskSystemPROJECT/Domain/group_operations.py`: group movements with a warning, cancel and monitoring ([docs](docs/group-operations.md)).
 - `DeskSystemPROJECT/Data/`: simulator requests and PostgreSQL persistence.
 - `frontend/src/api/` and `frontend/src/hooks/`: frontend requests and refresh state.
 - `wifi2ble-box-simulator/`: external simulator submodule.
@@ -52,9 +53,11 @@ This check starts the real services on their usual ports with temporary simulato
 
 ## Running commands (In the second terminal, the terminal where you ran python run.py needs to be turned on)
 
+```powershell
 $env:DESK_API_KEY = (Get-Content .\wifi2ble-box-simulator\config\api_keys.json | ConvertFrom-Json)[0]
 $env:DESK_API_BASE_URL = "http://127.0.0.1:8000"
 $env:DATABASE_URL = "postgresql://postgres:YOUR_PASSWORD@127.0.0.1:5432/group7_desksystem"
+```
 
 Example:
 ```powershell	
