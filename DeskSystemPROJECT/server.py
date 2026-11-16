@@ -17,6 +17,8 @@ from .Domain.desk_workflow import DeskWorkflow, WorkflowError
 from .Data.database import DatabaseError
 from .Data.desk_command_repository import desk_exists
 from .Data.desk_history_repository import get_desk_readings, get_desk_commands
+from .Domain.group_operations import DeskBusyError, GroupOperationService, GroupOperationSettings
+from .group_operations_api import get_group_service, router as group_operations_router
 from .movement_api import HeightRequest, HeightResponse
 
 
@@ -67,15 +69,22 @@ async def lifespan(_app):
     else:
         logger.info("desk history collection is off because DATABASE_URL is not set")
 
+    # group movements: warning, countdown, dispatch and monitoring (S5-1)
+    group_service = GroupOperationService(lambda: get_movement_workflow(), GroupOperationSettings.from_env())
+    _app.state.group_service = group_service
+    group_service.start()
+
     try:
         yield
     finally:
+        group_service.stop()
         if collector is not None:
             stop_event.set()
             collector.join(timeout=5)
 
 
 app = FastAPI(lifespan=lifespan)
+app.include_router(group_operations_router)
 
 
 def get_movement_workflow():
@@ -88,6 +97,7 @@ def request_desk_height(
     desk_id: str,
     request: HeightRequest,
     workflow: DeskWorkflow = Depends(get_movement_workflow),
+    groups: GroupOperationService = Depends(get_group_service),
 ):
     """Request one movement. Acceptance does not mean movement has completed.
 
@@ -95,7 +105,11 @@ def request_desk_height(
     status, including any separate storage/follow-up failure. Never auto-retry.
     """
     try:
-        result = workflow.request_height(desk_id, request.target_position_mm)
+        # A desk that is part of a group movement cannot also take a single command.
+        with groups.reserve_single(desk_id):
+            result = workflow.request_height(desk_id, request.target_position_mm)
+    except DeskBusyError as error:
+        raise HTTPException(status_code=409, detail=error.detail) from None
     except WorkflowError as error:
         errors = {
             "invalid_input": (422, "Invalid desk identifier or height. Nothing was sent."),
