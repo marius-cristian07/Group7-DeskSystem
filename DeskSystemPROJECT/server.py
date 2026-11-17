@@ -20,6 +20,9 @@ from .Data.desk_history_repository import get_desk_readings, get_desk_commands
 from .Domain.group_operations import DeskBusyError, GroupOperationService, GroupOperationSettings
 from .group_operations_api import get_group_service, router as group_operations_router
 from .movement_api import HeightRequest, HeightResponse
+from .cleaning_schedules_api import router as cleaning_schedules_router
+from .Domain.cleaning_scheduler import CleaningScheduler
+from .Data.cleaning_schedule_repository import mark_interrupted_runs
 
 
 logger = logging.getLogger(__name__)
@@ -46,6 +49,20 @@ def _collect_history(stop_event, interval):
 
 
 @asynccontextmanager
+
+def _run_cleaning_scheduler(group_service, stop_event):
+    """Check cleaning schedules every five seconds."""
+
+    scheduler = CleaningScheduler()
+
+    while not stop_event.is_set():
+        try:
+            scheduler.tick(group_service)
+        except Exception:
+            logger.exception("Cleaning scheduler failed")
+
+        stop_event.wait(5)
+
 async def lifespan(_app):
     # keep the collector tied to the backend lifetime
     stop_event = threading.Event()
@@ -70,21 +87,58 @@ async def lifespan(_app):
         logger.info("desk history collection is off because DATABASE_URL is not set")
 
     # group movements: warning, countdown, dispatch and monitoring (S5-1)
-    group_service = GroupOperationService(lambda: get_movement_workflow(), GroupOperationSettings.from_env())
+
+    group_service = GroupOperationService(
+        lambda: get_movement_workflow(),
+        GroupOperationSettings.from_env(),
+    )
     _app.state.group_service = group_service
     group_service.start()
 
+    scheduler_stop = threading.Event()
+    scheduler_thread = None
+
     try:
+        if os.environ.get("CLEANING_SCHEDULER_ENABLED") == "1":
+            if not os.environ.get("DATABASE_URL"):
+                raise RuntimeError(
+                    "DATABASE_URL is required for the cleaning scheduler"
+                )
+
+            # Do not replay unfinished movements after a restart
+            interrupted = mark_interrupted_runs()
+            logger.info(
+                "Cleaning runs requiring review after restart: %s",
+                interrupted,
+            )
+
+            scheduler_thread = threading.Thread(
+                target=_run_cleaning_scheduler,
+                args=(group_service, scheduler_stop),
+                name="cleaning_scheduler",
+                daemon=True,
+            )
+            scheduler_thread.start()
+
         yield
+
     finally:
+        scheduler_stop.set()
+
+        if scheduler_thread is not None:
+            scheduler_thread.join(timeout=5)
+
         group_service.stop()
+
         if collector is not None:
             stop_event.set()
             collector.join(timeout=5)
 
 
+
 app = FastAPI(lifespan=lifespan)
 app.include_router(group_operations_router)
+app.include_router(cleaning_schedules_router)
 
 
 def get_movement_workflow():
