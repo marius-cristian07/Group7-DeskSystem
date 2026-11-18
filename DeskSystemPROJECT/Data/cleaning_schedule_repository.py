@@ -38,21 +38,23 @@ def _check_conflicts(cursor, desk_ids, start_time, end_time, ignore_id=None):
 
 def create_schedule(
     name, cleaning_height_mm, return_height_mm, start_time, end_time, timezone, desk_ids,
+    is_enabled=True,
 ):
     """Create a schedule together with its desks in one transaction."""
     with transaction() as cursor:
         _lock_schedule_changes(cursor)
-        _check_conflicts(cursor, desk_ids, start_time, end_time)
+        if is_enabled:
+            _check_conflicts(cursor, desk_ids, start_time, end_time)
         cursor.execute(
             """
             INSERT INTO cleaning_schedules (
                 name, cleaning_height_mm, return_height_mm,
-                start_time, end_time, timezone
+                start_time, end_time, timezone, is_enabled
             )
-            VALUES (%s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING schedule_id
             """,
-            (name, cleaning_height_mm, return_height_mm, start_time, end_time, timezone),
+            (name, cleaning_height_mm, return_height_mm, start_time, end_time, timezone, is_enabled),
         )
         schedule_id = cursor.fetchone()[0]
         for desk_id in desk_ids:
@@ -112,6 +114,7 @@ def schedule_has_active_run(schedule_id):
 def update_schedule(
     schedule_id, name, cleaning_height_mm, return_height_mm,
     start_time, end_time, timezone, desk_ids,
+    is_enabled=None,
 ):
     """Update safely: lock the schedule and reject edits while a run is active."""
     with transaction() as cursor:
@@ -125,18 +128,19 @@ def update_schedule(
             return False
         if _has_active_run(cursor, schedule_id):
             raise ScheduleBusyError("Cannot edit a schedule with an active or uncertain cleaning run")
-        if row[0]:
+        enabled = row[0] if is_enabled is None else is_enabled
+        if enabled:
             _check_conflicts(cursor, desk_ids, start_time, end_time, ignore_id=schedule_id)
 
         cursor.execute(
             """
             UPDATE cleaning_schedules
             SET name = %s, cleaning_height_mm = %s, return_height_mm = %s,
-                start_time = %s, end_time = %s, timezone = %s
+                start_time = %s, end_time = %s, timezone = %s, is_enabled = %s
             WHERE schedule_id = %s
             """,
             (name, cleaning_height_mm, return_height_mm,
-             start_time, end_time, timezone, schedule_id),
+             start_time, end_time, timezone, enabled, schedule_id),
         )
         cursor.execute(
             "DELETE FROM cleaning_schedule_desks WHERE schedule_id = %s", (schedule_id,)
@@ -160,6 +164,30 @@ def disable_schedule(schedule_id):
             (schedule_id,),
         )
         return cursor.fetchone() is not None
+
+
+def list_cleaning_runs():
+    # keep the newest runs at the top
+    with transaction() as cursor:
+        cursor.execute(
+            """
+            SELECT r.*, s.name AS schedule_name, s.timezone
+            FROM cleaning_runs AS r
+            JOIN cleaning_schedules AS s ON s.schedule_id = r.schedule_id
+            ORDER BY r.occurrence_date DESC, r.run_id DESC
+            """
+        )
+        names = [column[0] for column in cursor.description]
+        return [dict(zip(names, row)) for row in cursor.fetchall()]
+
+
+def claimed_occurrence_dates(schedule_id, since):
+    with transaction() as cursor:
+        cursor.execute(
+            "SELECT occurrence_date FROM cleaning_runs WHERE schedule_id = %s AND occurrence_date >= %s",
+            (schedule_id, since),
+        )
+        return {row[0] for row in cursor.fetchall()}
 
 
 def claim_cleaning_start(schedule_id, occurrence_date, scheduled_start_utc=None):

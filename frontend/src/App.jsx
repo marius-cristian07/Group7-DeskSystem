@@ -1,6 +1,7 @@
 // Keep group warnings mounted even while live desk readings are unavailable.
 
 import DeskDashboard from './components/DeskDashboard';
+import CleaningSchedules from './components/CleaningSchedules';
 import { useDesks } from './hooks/useDesks';
 import './dashboard.css';
 import './group-control.css';
@@ -32,6 +33,7 @@ export default function App() {
         <p className="notice" role="status">No desks are available.</p>
       ) : null}
       <DeskDashboard desks={desks} lastUpdated={lastUpdated} />
+      <CleaningSchedules desks={desks} desksUnavailable={Boolean(error) || !lastUpdated} />
     </main>
   );
 }

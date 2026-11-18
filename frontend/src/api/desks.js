@@ -39,7 +39,11 @@ export async function getJson(path, { signal, ...requestOptions } = {}) {
 
   // Fetch resolves on HTTP errors too; FastAPI puts the reason in detail.
   if (!response.ok) {
-    const detail = typeof body?.detail === 'string' ? body.detail : `HTTP ${response.status}`;
+    let detail = typeof body?.detail === 'string' ? body.detail : `HTTP ${response.status}`;
+    // show the field errors returned by the backend
+    if (Array.isArray(body?.detail)) {
+      detail = body.detail.map(error => `${error.loc.slice(1).join('.')}: ${error.msg}`).join('; ');
+    }
     throw Object.assign(new Error(`Backend request failed: ${detail}`), { status: response.status });
   }
 

@@ -99,7 +99,7 @@ function Warning({ op, stale, names, updated }) {
 export function WarningPanel({ feed, names }) {
   const warnings = feed.operations.filter(isWarning);
   return (
-    <section className="warning-stack" aria-label="Movement warnings">
+    <section id="movement-warnings" className="warning-stack" aria-label="Movement warnings">
       {feed.error && <p className="notice notice--error" role="alert">
         {feed.updated ? `Group status is stale. Last update ${feed.updated.toLocaleTimeString()}.`
           : 'Group status is unavailable.'} Reconnecting…
