@@ -71,9 +71,18 @@ Each desk also reports the workflow's `command_status` (`accepted`, `failed`, `u
    fail are `not_sent`, the rest are sent. If none pass, the operation is `blocked`
    (`no_desks_ready`).
 
-The acknowledgement endpoints are a proposal for S5-3 (Pico) and S5-5 (dashboard) to agree on.
+The dashboard acknowledges as `dashboard`. A Pico client acknowledges independently as `pico`.
 The channel names are free-form (lowercase letters, digits, `-` and `_`); the required ones are
 set with `GROUP_WARNING_REQUIRED_CHANNELS`.
+
+## Dashboard operation list
+
+The group dashboard polls `GET /api/group-operations` for all active operations
+and the five latest finished results. This also recovers dispatch and monitoring
+after a page reload. Each operation includes a `reason` for a manager request,
+a scheduled cleaning raise or a scheduled return. The dashboard sends its
+`dashboard` acknowledgement while a warning's cancel control is visible in the
+foreground tab. The Pico uses its own channel.
 
 ## Cancelling
 

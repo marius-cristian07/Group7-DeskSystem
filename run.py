@@ -5,6 +5,7 @@
 
 """Start the local simulator, Python backend, and React in one terminal."""
 
+import argparse
 import json
 import os
 from pathlib import Path
@@ -132,7 +133,7 @@ def stop_processes(processes):
         process.stdout.close()
 
 
-def main():
+def main(*, stable_simulator=False):
     if hasattr(signal, "SIGBREAK"):
         signal.signal(signal.SIGBREAK, signal.default_int_handler)
     # Vite prints Unicode symbols that older Windows terminal encodings reject.
@@ -154,10 +155,14 @@ def main():
         if database_url:
             backend_env["DATABASE_URL"] = database_url
         frontend_env = {**common_env, "VITE_API_BASE_URL": f"http://127.0.0.1:{BACKEND_PORT}"}
+        simulator_command = [python, str(ROOT / "DeskSystemPROJECT/dev_simulator.py"), "--port", str(SIMULATOR_PORT)]
+        if stable_simulator:
+            simulator_command.append("--stable-simulator")
+            print("Stable simulator: two fresh desks, simulated users off, no random collisions or power-offs.")
         services = [
             (
                 "simulator",
-                [python, str(ROOT / "DeskSystemPROJECT/dev_simulator.py"), "--port", str(SIMULATOR_PORT)],
+                simulator_command,
                 SIMULATOR, common_env, SIMULATOR_PORT, None,
             ),
             (
@@ -196,4 +201,7 @@ def main():
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--stable-simulator", action="store_true",
+                        help="Start two fresh desks for repeatable group movements.")
+    raise SystemExit(main(stable_simulator=parser.parse_args().stable_simulator))

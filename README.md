@@ -10,6 +10,10 @@ python run.py
 
 Open **http://127.0.0.1:5173**. The launcher runs all three services in this terminal; press **Ctrl+C** to stop them. It reads the local simulator key for the backend and uses the fast loopback addresses automatically. PostgreSQL continues running as your existing local service.
 
+For a repeatable group movement demo, use `python run.py --stable-simulator`.
+It starts two temporary desks without simulated users, collisions, or power-offs.
+See the [dashboard guide](frontend/README.md) for PostgreSQL and warning channel setup.
+
 - [Setup, startup, and troubleshooting](SETUP.md)
 - [Frontend data interface for S3-4](frontend/README.md)
 - [PostgreSQL setup](database/SETUP.md)

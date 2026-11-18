@@ -6,6 +6,7 @@
 
 import { useRef, useState } from 'react';
 import { requestDeskHeight } from '../api/desks';
+import { isValidHeight, MIN_HEIGHT_MM, MAX_HEIGHT_MM } from '../utils/height';
 
 export default function HeightControl({ desk }) {
   const [height, setHeight] = useState('');
@@ -17,7 +18,7 @@ export default function HeightControl({ desk }) {
     event.preventDefault();
     if (inFlight.current) return;
     const target = Number(height);
-    if (!height.trim() || !Number.isInteger(target) || target < 680 || target > 1320) {
+    if (!isValidHeight(target)) {
       setFeedback({ error: true, text: 'Enter a number between 680 and 1320 mm.' });
       return;
     }
@@ -48,7 +49,7 @@ export default function HeightControl({ desk }) {
         <label htmlFor="target-height">Target height (mm)</label>
         <p id="height-help">Enter a number between 680 and 1320 mm for {desk.name}. The current height: {desk.position_mm} mm.</p>
         <div className="height-control__fields">
-          <input id="target-height" type="number" min="680" max="1320" step="1" required
+          <input id="target-height" type="number" min={MIN_HEIGHT_MM} max={MAX_HEIGHT_MM} step="1" required
             value={height} onChange={(event) => setHeight(event.target.value)}
             aria-describedby="height-help" disabled={pending} />
           <button type="submit" disabled={pending}>{pending ? 'Sending�' : 'Set height'}</button>
