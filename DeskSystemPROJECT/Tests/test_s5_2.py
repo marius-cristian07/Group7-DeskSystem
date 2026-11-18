@@ -70,7 +70,8 @@ class SchedulerTests(unittest.TestCase):
             due.return_value = [("return", 10, day)]
             scheduler.tick(service, datetime(2026, 11, 18, 5, tzinfo=timezone.utc))
             self.assertEqual(service.create.call_args_list,
-                             [call(["desk-a"], 1200), call(["desk-a"], 720)])
+                             [call(["desk-a"], 1200, reason="Scheduled cleaning: raise desks"),
+                              call(["desk-a"], 720, reason="Scheduled cleaning: return desks")])
             start.assert_called_once_with(10, day, datetime(2026, 11, 17, 21, tzinfo=timezone.utc))
             save_up.assert_called_once_with(101, "up")
             save_down.assert_called_once_with(101, "down")

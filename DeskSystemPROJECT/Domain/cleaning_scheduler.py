@@ -126,7 +126,8 @@ class CleaningScheduler:
 
             try:
                 # S5-1 is the ONLY component allowed to request desk movements.
-                operation = group_service.create(schedule["desk_ids"], height)
+                reason = "Scheduled cleaning: raise desks" if action == "start" else "Scheduled cleaning: return desks"
+                operation = group_service.create(schedule["desk_ids"], height, reason=reason)
             except GroupOperationError:
                 # S5-1.create fails before a movement can be dispatched.
                 repository.set_run_status(run_id, status, "blocked")

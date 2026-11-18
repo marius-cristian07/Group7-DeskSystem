@@ -1,0 +1,60 @@
+.group-control, .group-progress article, .group-warning {
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+.group-control, .group-progress { margin-block: 20px; }
+.group-control h2, .group-warning h2, .group-progress h3, .group-review h3 { margin: 0; }
+.group-row, .group-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.group-row { justify-content: space-between; }
+.group-actions button, .cancel-movement, .group-actions input {
+  box-sizing: border-box;
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-height: 44px;
+  padding: 6px 12px;
+}
+.group-actions input { width: 9rem; }
+.group-actions button, .cancel-movement, .desk-select { cursor: pointer; }
+.group-actions .primary { background: var(--moving-bg); color: var(--moving-text); border-color: var(--moving); }
+.group-actions button:disabled, .cancel-movement:disabled { opacity: .55; cursor: default; }
+.group-review { border-top: 1px solid var(--border); padding-top: 12px; }
+.desk-grid > li { flex-direction: column; }
+.desk-grid .desk-card { border-radius: 12px 12px 0 0; }
+.desk-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding-inline: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+}
+.desk-select input { accent-color: var(--focus); }
+.group-selected .desk-select { background: var(--moving-bg); border-color: var(--moving); }
+.warning-stack {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  max-height: 65dvh;
+  overflow: auto;
+}
+.group-warning { margin-block: 4px; background: var(--error-tint); border: 2px solid var(--error); }
+.group-kicker { font-weight: 700; color: var(--error-text); }
+.cancel-movement { background: var(--error-text); color: var(--error-bg); font-weight: 700; }
+.group-progress article { margin-block: 8px; }
+.group-progress article p { margin: 6px 0; }
+.group-progress ul { padding-left: 20px; }
+.group-progress li + li { margin-top: 6px; }

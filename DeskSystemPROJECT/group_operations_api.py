@@ -62,6 +62,7 @@ class DeskResultResponse(BaseModel):
 
 class GroupOperationResponse(BaseModel):
     operation_id: str
+    reason: str
     state: str
     message: str
     desk_ids: List[str]
@@ -98,6 +99,7 @@ class GroupOperationResponse(BaseModel):
             ))
         return cls(
             operation_id=view.operation_id,
+            reason=view.reason,
             state=view.state,
             message=view.message,
             desk_ids=list(view.desk_ids),
@@ -135,6 +137,11 @@ def _call(function, *args):
         return function(*args)
     except GroupOperationError as error:
         raise HTTPException(status_code=_STATUS.get(error.reason, 400), detail=str(error)) from None
+
+
+@router.get("", response_model=List[GroupOperationResponse])
+def list_group_operations(service: GroupOperationService = Depends(get_group_service)):
+    return [GroupOperationResponse.from_view(op) for op in service.dashboard_operations()]
 
 
 @router.post("", response_model=GroupOperationResponse, status_code=201)

@@ -166,6 +166,7 @@ class AckView:
 @dataclass(frozen=True)
 class OperationView:
     operation_id: str
+    reason: str
     state: str
     message: str
     desk_ids: Tuple[str, ...]
@@ -202,6 +203,7 @@ class _Desk:
 @dataclass
 class _Operation:
     operation_id: str
+    reason: str
     desk_ids: Tuple[str, ...]
     target_mm: int
     required_channels: Tuple[str, ...]
@@ -376,7 +378,7 @@ class GroupOperationService:
             return "error", f"the desk reports an error (status: {record['state']['status']})"
         return None
 
-    def create(self, desk_ids, target_mm):
+    def create(self, desk_ids, target_mm, *, reason="Manager requested a group height change"):
         """Create a group operation and publish its warning. No desk is moved."""
         desk_ids = self._validate(desk_ids, target_mm)
         operation_id = uuid.uuid4().hex
@@ -406,6 +408,7 @@ class GroupOperationService:
             now = self._clock()
             operation = _Operation(
                 operation_id=operation_id,
+                reason=reason,
                 desk_ids=desk_ids,
                 target_mm=target_mm,
                 required_channels=self.settings.required_channels,
@@ -458,6 +461,17 @@ class GroupOperationService:
         with self._lock:
             now = self._clock()
             return [self._view_locked(op, now) for op in self._operations.values() if op.state in WARNING_STATES]
+
+    def dashboard_operations(self):
+        """Include every live operation and the five most recently finished results."""
+        with self._lock:
+            now = self._clock()
+            active = [op for op in self._operations.values() if op.state in ACTIVE_STATES]
+            finished = sorted(
+                (op for op in self._operations.values() if op.finished is not None),
+                key=lambda op: op.finished, reverse=True,
+            )
+            return [self._view_locked(op, now) for op in [*active, *finished[:5]]]
 
     def _find_locked(self, operation_id):
         operation = self._operations.get(operation_id)
@@ -784,6 +798,7 @@ class GroupOperationService:
         wall = lambda moment: None if moment is None else self._wall(operation, moment)  # noqa: E731
         return OperationView(
             operation_id=operation.operation_id,
+            reason=operation.reason,
             state=operation.state,
             message=self._message(operation),
             desk_ids=operation.desk_ids,

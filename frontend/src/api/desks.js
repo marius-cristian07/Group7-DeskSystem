@@ -13,6 +13,8 @@
  */
 
 // Remove trailing slashes so joining the address and route gives one slash.
+import { isValidHeight } from '../utils/height.js';
+
 const backendUrl = (import.meta.env?.VITE_API_BASE_URL || 'http://127.0.0.1:8080').replace(/\/+$/, '');
 
 // signal is optional: the hook passes an AbortController's signal so it can
@@ -65,7 +67,7 @@ export function getHealth(options) {
 
 /** Send once: transport errors can happen after the desk accepted the command. */
 export async function requestDeskHeight(deskId, target) {
-  if (!Number.isInteger(target) || target < 680 || target > 1320) {
+  if (!isValidHeight(target)) {
     throw new Error('Enter a number between 680 and 1320 mm.');
   }
   let result;

@@ -1,11 +1,9 @@
-// The dashboard page (S3-4): a grid of desk cards built from live desk data,
-// or a loading, empty, or connection-error message.
-// useDesks handles requests and automatic refreshes; this component only renders
-// its state and connects the Retry button. DeskDashboard draws the grid.
+// Keep group warnings mounted even while live desk readings are unavailable.
 
 import DeskDashboard from './components/DeskDashboard';
 import { useDesks } from './hooks/useDesks';
 import './dashboard.css';
+import './group-control.css';
 
 export default function App() {
   // These values update together when a request starts, succeeds, or fails.
@@ -22,19 +20,18 @@ export default function App() {
           {loading && lastUpdated && !error && <span role="status"> · Refreshing…</span>}
         </p>
       </header>
-      {/* Choose one view: error, first load, empty result, or the desk grid. */}
-      {error ? (
+      {error && (
         <section className="notice notice--error" role="alert">
           <p>{error}</p>
           <button type="button" onClick={refresh}>Retry now</button>
         </section>
-      ) : loading && !lastUpdated ? (
-        <p className="notice" role="status">Loading desks…</p>
-      ) : desks.length === 0 ? (
-        <p className="notice" role="status">No desks are available.</p>
-      ) : (
-        <DeskDashboard desks={desks} lastUpdated={lastUpdated} />
       )}
+      {!error && loading && !lastUpdated ? (
+        <p className="notice" role="status">Loading desks…</p>
+      ) : !error && desks.length === 0 ? (
+        <p className="notice" role="status">No desks are available.</p>
+      ) : null}
+      <DeskDashboard desks={desks} lastUpdated={lastUpdated} />
     </main>
   );
 }

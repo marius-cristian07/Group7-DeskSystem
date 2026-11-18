@@ -44,7 +44,9 @@ export function useDesks() {
     // Start immediately and keep the promise for any callers that arrive later.
     request.promise = (async () => {
       try {
-        const desks = await getDesks({ signal: request.controller.signal });
+        const desks = await getDesks({
+          signal: AbortSignal.any([request.controller.signal, AbortSignal.timeout(5000)]),
+        });
         // Only the active request may update a component that is still mounted.
         if (mounted.current && pendingRequest.current === request) {
           setState({ desks, loading: false, error: null, lastUpdated: new Date() });
