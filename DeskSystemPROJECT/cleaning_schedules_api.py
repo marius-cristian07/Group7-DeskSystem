@@ -1,6 +1,8 @@
 """HTTP API for S5-2 schedules and cancellation of individual cleaning runs."""
 
-from datetime import time
+import os
+from datetime import datetime, time, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
@@ -10,7 +12,8 @@ from .Data.cleaning_schedule_repository import ScheduleBusyError, ScheduleConfli
 from .Data.database import DatabaseError
 from .Data.desk_command_repository import desk_exists
 from .Domain.group_operations import GroupOperationError
-from .group_operations_api import get_group_service
+from .Domain.cleaning_schedule_timing import next_occurrence
+from .group_operations_api import get_group_service, GroupOperationResponse
 
 router = APIRouter(prefix="/api/cleaning-schedules", tags=["cleaning schedules"])
 
@@ -23,6 +26,8 @@ class ScheduleCreate(BaseModel):
     end_time: time
     timezone: str = "Europe/Copenhagen"
     desk_ids: list[str] = Field(min_length=1)
+    # keep the current setting when an older client leaves this out
+    is_enabled: bool | None = None
 
     @model_validator(mode="after")
     def check_schedule(self):
@@ -52,9 +57,48 @@ def _check_desks(desk_ids):
 @router.get("")
 def get_all_schedules():
     try:
-        return repository.list_schedules()
+        now = datetime.now(timezone.utc)
+        result = []
+        for schedule in repository.list_schedules():
+            today = now.astimezone(ZoneInfo(schedule["timezone"])).date()
+            claimed = repository.claimed_occurrence_dates(schedule["schedule_id"], today)
+            result.append({**schedule, "next_occurrence": next_occurrence(schedule, claimed, now)})
+        return result
     except DatabaseError:
         raise HTTPException(503, "Database is unavailable") from None
+
+
+@router.get("/settings")
+def get_cleaning_settings():
+    return {
+        "timezone": "Europe/Copenhagen",
+        "height_limits_mm": {"min": 680, "max": 1320},
+        "scheduler_enabled": os.environ.get("CLEANING_SCHEDULER_ENABLED", "0") == "1",
+    }
+
+
+@router.get("/runs")
+def get_cleaning_runs(group_service=Depends(get_group_service)):
+    try:
+        runs = repository.list_cleaning_runs()
+    except DatabaseError:
+        raise HTTPException(503, "Database is unavailable") from None
+    for run in runs:
+        run["operations"] = []
+        # use the same operation results as the group movement screen
+        for phase, key in (("raise", "raise_operation_id"), ("return", "return_operation_id")):
+            operation_id = run.get(key)
+            if not operation_id:
+                continue
+            try:
+                operation = GroupOperationResponse.from_view(group_service.get(operation_id)).model_dump()
+                run["operations"].append({**operation, "phase": phase})
+            except GroupOperationError as error:
+                run["operations"].append({
+                    "operation_id": operation_id, "phase": phase, "state": "unavailable",
+                    "message": str(error), "desks": [],
+                })
+    return {"runs": runs}
 
 
 @router.get("/{schedule_id}")
@@ -80,6 +124,7 @@ def create_schedule(data: ScheduleCreate):
             end_time=data.end_time,
             timezone=data.timezone,
             desk_ids=data.desk_ids,
+            is_enabled=True if data.is_enabled is None else data.is_enabled,
         )
         return {"schedule_id": schedule_id}
     except ScheduleConflictError as error:
@@ -101,6 +146,7 @@ def update_schedule(schedule_id: int, data: ScheduleCreate):
             end_time=data.end_time,
             timezone=data.timezone,
             desk_ids=data.desk_ids,
+            is_enabled=data.is_enabled,
         )
     except ScheduleBusyError as error:
         raise HTTPException(409, str(error)) from None

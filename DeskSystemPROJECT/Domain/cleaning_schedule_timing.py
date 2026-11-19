@@ -4,6 +4,25 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 
+def next_occurrence(schedule, claimed_dates=(), now=None):
+    # skip past starts and dates that already have a run
+    if not schedule["is_enabled"]:
+        return None
+    now = now or datetime.now(timezone.utc)
+    today = now.astimezone(ZoneInfo(schedule["timezone"])).date()
+    for offset in range(370):
+        day = today + timedelta(days=offset)
+        if day in claimed_dates:
+            continue
+        try:
+            start, end = get_window_utc(schedule, day)
+        except ValueError:
+            continue
+        if start >= now and start >= schedule.get("created_at", now):
+            return {"start_at": start, "end_at": end}
+    return None
+
+
 def get_window_utc(schedule, occurrence_date):
     zone = ZoneInfo(schedule["timezone"])
     start_time, end_time = schedule["start_time"], schedule["end_time"]
