@@ -1,4 +1,39 @@
-# Pico W connection indicator (KAN-18)
+# Pico W movement warning and connection indicator
+
+The connected Pico covers one shared warning area. Its red LED (GP10) and
+active-high buzzer input (GP20) pulse together every 250 ms. Connect the
+normally open button between GP7 and GND. A falling edge latches cancellation
+even when the button is released during a quiet part of the blink cycle.
+
+## Run a movement test
+
+Flash the firmware as described below. Close any serial monitor using the Pico.
+From the repository root, run:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+$env:DESK_PICO_PORT = "COM6"
+$env:GROUP_WARNING_REQUIRED_CHANNELS = "pico"
+.\.venv\Scripts\python.exe run.py --stable-simulator
+```
+
+Use the board's actual USB serial port and the project's configured PostgreSQL
+database. Open http://127.0.0.1:5173 and request a group height change. Press
+the physical button during the warning. The dashboard should show cancellation
+and the simulator should stay at its original height. Repeat the request and
+let the default 10 seconds expire. The simulator should reach the target.
+The same procedure runs for both directions of scheduled cleaning movements.
+The scheduler has its own opt-in setting, `CLEANING_SCHEDULER_ENABLED=1`.
+
+The backend owns the USB port and sends a separate operation ID for every
+warning. The first board acknowledgement starts the countdown once the other
+configured channels are ready. At the deadline the backend requests a final
+button check. A lost link, reset, or missing reply prevents release. One board
+handles one warning at a time. Other operations wait within their existing
+acknowledgement timeout. Choose `pico,dashboard` to require a visible dashboard
+as well. The warning uses USB even when Wi-Fi is unavailable.
+
+## Wi-Fi connection indicator
 
 The Pico W periodically requests `GET /api/health` from the FastAPI backend.
 The green LED stays on after a successful HTTP 200 response and blinks until the

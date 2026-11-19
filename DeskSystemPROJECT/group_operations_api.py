@@ -1,3 +1,9 @@
+"""
+Edited by : Edris Fiazi
+Edited on : 19.11.2026
+Purpose   : KAN-30 Reserve Pico acknowledgements for the USB connection.
+"""
+
 # HTTP routes for group movements (S5-1). All rules live in Domain/group_operations.py;
 # this file only turns requests into service calls and the service's errors into HTTP codes.
 # See docs/group-operations.md for the workflow and the warning-acknowledgement contract.
@@ -38,7 +44,7 @@ class GroupOperationRequest(BaseModel):
 class AcknowledgementRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    channel: str = Field(description="Who is warning: for example pico or dashboard.")
+    channel: str = Field(description="HTTP warning channel, for example dashboard. The Pico confirms over USB.")
 
 
 class AcknowledgementResponse(BaseModel):
@@ -172,6 +178,8 @@ def acknowledge_group_warning(
     service: GroupOperationService = Depends(get_group_service),
 ):
     """A warning channel confirms its warning is showing. Repeat it while the warning lasts."""
+    if request.channel == "pico":
+        raise HTTPException(409, "The Pico acknowledges through the connected warning board.")
     return GroupOperationResponse.from_view(_call(service.acknowledge, operation_id, request.channel))
 
 
