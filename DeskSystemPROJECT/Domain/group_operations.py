@@ -1,3 +1,9 @@
+"""
+Edited by : Edris Fiazi
+Edited on : 19.11.2026
+Purpose   : KAN-30 Wait for the Pico's final button check before releasing a group movement.
+"""
+
 # Group movements (S5-1): one shared process that warns, can be cancelled, then dispatches.
 # A group operation is a list of desks and one target height. It moves through these states:
 #
@@ -14,8 +20,6 @@
 # Everything that changes an operation's state happens under one lock, so cancel and
 # dispatch can never both succeed. Operations are kept in memory (their commands are
 # recorded in desk_commands as usual), so this relies on the backend running as one process.
-
-"""Warn, cancel, dispatch and monitor movements of several desks as one operation."""
 
 import logging
 import math
@@ -378,7 +382,7 @@ class GroupOperationService:
             return "error", f"the desk reports an error (status: {record['state']['status']})"
         return None
 
-    def create(self, desk_ids, target_mm, *, reason="Manager requested a group height change"):
+    def create(self, desk_ids, target_mm, *, reason="Manager requested a group height change", automatic=False):
         """Create a group operation and publish its warning. No desk is moved."""
         desk_ids = self._validate(desk_ids, target_mm)
         operation_id = uuid.uuid4().hex
@@ -406,12 +410,15 @@ class GroupOperationService:
 
         with self._lock:
             now = self._clock()
+            channels = self.settings.required_channels
+            if automatic and "pico" not in channels:
+                channels = (*channels, "pico")
             operation = _Operation(
                 operation_id=operation_id,
                 reason=reason,
                 desk_ids=desk_ids,
                 target_mm=target_mm,
-                required_channels=self.settings.required_channels,
+                required_channels=channels,
                 created=now,
                 wall_origin=self._wall_clock(),
                 ack_deadline=now + self.settings.ack_timeout_s,
@@ -542,7 +549,17 @@ class GroupOperationService:
 
     # ---------- moving from one state to the next ----------
 
-    def _advance_locked(self, operation, now):
+    def finish_pico_warning(self, operation_id):
+        """Accept the physical board's final button sample for this operation only."""
+        with self._lock:
+            operation = self._find_locked(operation_id)
+            now = self._clock()
+            if (operation.state != COUNTDOWN or "pico" not in operation.required_channels
+                    or now < operation.warning_deadline):
+                raise GroupOperationError("The Pico cannot release this movement now.", "not_active")
+            self._advance_locked(operation, now, pico_clear=True)
+
+    def _advance_locked(self, operation, now, *, pico_clear=False):
         """Apply deadlines. Every transition happens here or in cancel/acknowledge, under the lock."""
         if operation.state == PENDING_WARNING and now >= operation.ack_deadline:
             missing = [c for c in operation.required_channels if c not in operation.acks]
@@ -557,7 +574,10 @@ class GroupOperationService:
                     operation, "warning_stale",
                     f"The warning was not confirmed recently enough by: {', '.join(stale)}. No desk was moved.",
                 )
-            else:
+            elif ("pico" in operation.required_channels
+                  and now >= operation.warning_deadline + self.settings.stale_s):
+                self._block_locked(operation, "pico_release_timeout", "No final button check from the Pico.")
+            elif "pico" not in operation.required_channels or pico_clear:
                 # The commitment point. From here, cancel() is refused.
                 operation.state = DISPATCHING
                 operation.dispatched = now

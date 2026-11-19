@@ -1,4 +1,8 @@
-"""S5-2 scheduler: determine due work, persist claims, delegate movement to S5-1."""
+"""
+Edited by : Edris Fiazi
+Edited on : 19.11.2026
+Purpose   : KAN-30 Require a Pico warning for both the scheduled raise and return.
+"""
 
 import logging
 from datetime import datetime, timedelta, timezone
@@ -127,7 +131,7 @@ class CleaningScheduler:
             try:
                 # S5-1 is the ONLY component allowed to request desk movements.
                 reason = "Scheduled cleaning: raise desks" if action == "start" else "Scheduled cleaning: return desks"
-                operation = group_service.create(schedule["desk_ids"], height, reason=reason)
+                operation = group_service.create(schedule["desk_ids"], height, reason=reason, automatic=True)
             except GroupOperationError:
                 # S5-1.create fails before a movement can be dispatched.
                 repository.set_run_status(run_id, status, "blocked")

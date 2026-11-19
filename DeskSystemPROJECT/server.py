@@ -1,3 +1,9 @@
+"""
+Edited by : Edris Fiazi
+Edited on : 19.11.2026
+Purpose   : KAN-30 Read the Pico's warning and button responses over USB before sending a movement command.
+"""
+
 # the backend serves live desk data and saves history in the background
 # GET desk routes read live data; POST height runs the shared movement workflow.
 
@@ -5,6 +11,8 @@ import logging
 import math
 import os
 import threading
+import time
+import serial
 from contextlib import asynccontextmanager
 
 from datetime import datetime
@@ -17,7 +25,7 @@ from .Domain.desk_workflow import DeskWorkflow, WorkflowError
 from .Data.database import DatabaseError
 from .Data.desk_command_repository import desk_exists
 from .Data.desk_history_repository import get_desk_readings, get_desk_commands
-from .Domain.group_operations import DeskBusyError, GroupOperationService, GroupOperationSettings
+from .Domain.group_operations import DeskBusyError, GroupOperationError, GroupOperationService, GroupOperationSettings, WARNING_STATES
 from .group_operations_api import get_group_service, router as group_operations_router
 from .movement_api import HeightRequest, HeightResponse
 from .cleaning_schedules_api import router as cleaning_schedules_router
@@ -48,7 +56,67 @@ def _collect_history(stop_event, interval):
         stop_event.wait(interval)
 
 
-@asynccontextmanager
+def pico_command(port, command, operation_id=""):
+    message = f"{command} {operation_id}".strip()
+    port.write((message + "\n").encode("ascii"))
+    deadline = time.monotonic() + 1
+    while time.monotonic() < deadline:
+        line = port.read_until(b"\n", 128)
+        if not line.endswith(b"\n"):
+            continue
+        reply = line.decode("ascii", errors="replace").split()
+        if command == "STOP" and reply == ["IDLE"]:
+            return "IDLE"
+        if len(reply) == 2 and reply[1] == operation_id:
+            return reply[0]
+    raise serial.SerialException("No reply from the Pico")
+
+
+def warn_before_movement(port, service, operation_id, stop_event):
+    command = "START"
+    try:
+        while not stop_event.is_set():
+            reply = pico_command(port, command, operation_id)
+            if reply == "CANCEL":
+                service.cancel(operation_id)
+                return
+            if command == "FINISH" and reply == "CLEAR":
+                service.finish_pico_warning(operation_id)
+                return
+            if reply != "ACTIVE" or command == "FINISH":
+                raise serial.SerialException("Pico lost the current warning")
+
+            service.acknowledge(operation_id, "pico")
+            stop_event.wait(0.1)
+            movement = service.get(operation_id)
+            if movement.state not in WARNING_STATES:
+                return
+            command = "POLL"
+            if movement.seconds_remaining == 0:
+                command = "FINISH"
+    finally:
+        # A USB disconnect or shutdown during the warning cancels this movement.
+        if service.get(operation_id).state in WARNING_STATES:
+            service.cancel(operation_id)
+
+
+def run_pico_warning(port_name, service, stop_event):
+    while not stop_event.is_set():
+        try:
+            with serial.Serial(port_name, 115200, timeout=0.15, write_timeout=0.5) as port:
+                port.reset_input_buffer()
+                pico_command(port, "STOP")
+                while not stop_event.is_set():
+                    for movement in service.active_warnings():
+                        if "pico" in movement.required_channels:
+                            warn_before_movement(port, service, movement.operation_id, stop_event)
+                            pico_command(port, "STOP")
+                            break
+                    stop_event.wait(0.1)
+        except (OSError, GroupOperationError) as error:
+            logger.warning("Pico on %s: %s", port_name, error)
+            stop_event.wait(2)
+
 
 def _run_cleaning_scheduler(group_service, stop_event):
     """Check cleaning schedules every five seconds."""
@@ -63,6 +131,7 @@ def _run_cleaning_scheduler(group_service, stop_event):
 
         stop_event.wait(5)
 
+@asynccontextmanager
 async def lifespan(_app):
     # keep the collector tied to the backend lifetime
     stop_event = threading.Event()
@@ -97,8 +166,16 @@ async def lifespan(_app):
 
     scheduler_stop = threading.Event()
     scheduler_thread = None
+    pico_thread = None
 
     try:
+        pico_port = os.environ.get("DESK_PICO_PORT")
+        if pico_port:
+            pico_thread = threading.Thread(
+                target=run_pico_warning, args=(pico_port, group_service, scheduler_stop),
+                name="pico_warning", daemon=True,
+            )
+            pico_thread.start()
         if os.environ.get("CLEANING_SCHEDULER_ENABLED") == "1":
             if not os.environ.get("DATABASE_URL"):
                 raise RuntimeError(
@@ -127,6 +204,8 @@ async def lifespan(_app):
 
         if scheduler_thread is not None:
             scheduler_thread.join(timeout=5)
+        if pico_thread is not None:
+            pico_thread.join(timeout=5)
 
         group_service.stop()
 
