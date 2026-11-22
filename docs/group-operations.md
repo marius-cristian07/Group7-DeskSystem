@@ -22,7 +22,7 @@ dispatching -> blocked                     (no desk passed the final check; noth
 | State | Meaning |
 |---|---|
 | `pending_warning` | The warning is published. Waiting for every required channel to acknowledge it. |
-| `countdown` | Every required channel acknowledged. The desks move when the countdown ends. |
+| `countdown` | Every required channel acknowledged. Dispatch waits for the deadline and, when required, the Pico's final button check. |
 | `dispatching` | The countdown ended. **Cancelling is no longer possible.** Commands are being sent. |
 | `monitoring` | Commands were sent. Fresh readings are polled until each desk is at its target or time runs out. |
 | `completed` | Every desk was confirmed at its target by a fresh reading. |
@@ -57,21 +57,24 @@ Each desk also reports the workflow's `command_status` (`accepted`, `failed`, `u
 1. `POST /api/group-operations` checks the input, the configuration, the database and every desk
    (available, no current error) and **only then** publishes the warning. A bad request creates
    nothing and sends nothing.
-2. The warning is published by being visible. The Pico and the dashboard poll
-   `GET /api/group-operations/active-warning` and show/sound it while `warning_active` is true.
-3. Each channel confirms that its warning has started with
-   `POST /api/group-operations/{id}/acknowledge` and `{"channel": "pico"}` (or `dashboard`).
+2. The dashboard reads the warning from the group API. When `DESK_PICO_PORT` is set,
+   the backend sends the operation ID to the physical board over USB.
+3. The board confirms that its outputs are active over USB. The dashboard uses
+   `POST /api/group-operations/{id}/acknowledge` with `{"channel": "dashboard"}`.
    The countdown starts only when **every required channel** has acknowledged.
 4. A channel should repeat its acknowledgement while the warning is showing (for example
    every few seconds). A channel whose last acknowledgement is older than
    `GROUP_WARNING_STALE_SECONDS` when the countdown ends counts as **stale** and blocks dispatch.
 5. If a required channel never acknowledges within `GROUP_WARNING_ACK_TIMEOUT_SECONDS`, the
    operation is `blocked` with `blocked_code: warning_not_acknowledged`.
-6. When the countdown ends, every desk is checked again (available, no current error). Desks that
+6. When the countdown ends, a required Pico must return a final clear result for the same
+   operation. A latched button press cancels it. Missing confirmation blocks dispatch.
+   Every desk is then checked again (available, no current error). Desks that
    fail are `not_sent`, the rest are sent. If none pass, the operation is `blocked`
    (`no_desks_ready`).
 
-The dashboard acknowledges as `dashboard`. A Pico client acknowledges independently as `pico`.
+The dashboard acknowledges as `dashboard`. Only the USB board can acknowledge as `pico`.
+Scheduled raises and returns always require the physical channel, including in dashboard demo mode.
 The channel names are free-form (lowercase letters, digits, `-` and `_`); the required ones are
 set with `GROUP_WARNING_REQUIRED_CHANNELS`.
 
@@ -90,7 +93,7 @@ foreground tab. The Pico uses its own channel.
 guarantees that no command is sent.
 
 Cancelling and the countdown ending are both state changes made under one lock, so exactly one
-of them takes effect. If the countdown has already ended, cancelling returns HTTP 409
+of them takes effect. Once dispatch has started, cancelling returns HTTP 409
 (`Movement commands have already been sent...`). **Cancelling is not an emergency stop** and
 does not stop desks that are already moving. Cancelling twice is harmless.
 
@@ -136,8 +139,7 @@ With the app running (`python run.py`), and `GROUP_WARNING_REQUIRED_CHANNELS=das
 $b = 'http://127.0.0.1:8080/api/group-operations'
 $op = Invoke-RestMethod -Method Post -Uri $b -ContentType 'application/json' `
   -Body '{"desk_ids":["DESK_ID_1","DESK_ID_2"],"target_position_mm":1000}'
-Invoke-RestMethod -Method Post -Uri "$b/$($op.operation_id)/acknowledge" -ContentType 'application/json' -Body '{"channel":"pico"}'
 Invoke-RestMethod -Method Post -Uri "$b/$($op.operation_id)/acknowledge" -ContentType 'application/json' -Body '{"channel":"dashboard"}'
 Invoke-RestMethod -Uri "$b/$($op.operation_id)"                       # poll this
-Invoke-RestMethod -Method Post -Uri "$b/$($op.operation_id)/cancel"   # only before the countdown ends
+Invoke-RestMethod -Method Post -Uri "$b/$($op.operation_id)/cancel"   # only before dispatch
 ```
