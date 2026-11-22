@@ -31,9 +31,14 @@ class DashboardOperationsTests(unittest.TestCase):
             self.assertEqual([op["state"] for op in current], ["pending_warning", "cancelled"])
             self.assertEqual(current[0]["reason"], scheduled.reason)
             self.assertEqual(current[1]["desks"][0]["result"], "cancelled")
-            for channel in service.settings.required_channels:
-                client.post(f"{path}/{scheduled.operation_id}/acknowledge", json={"channel": channel}).raise_for_status()
+            # The dashboard acknowledges over HTTP. The Pico cannot use this route;
+            # it supplies its final button/clear result through the backend's board connection.
+            service.acknowledge(scheduled.operation_id, "pico")  # simulated USB ACTIVE reply
+            response = client.post(
+                f"{path}/{scheduled.operation_id}/acknowledge", json={"channel": "dashboard"}
+            )
+            self.assertEqual(response.status_code, 200)
             clock.return_value = service.settings.countdown_s
-            service.tick()
+            service.finish_pico_warning(scheduled.operation_id)
             self.assertFalse(client.get(path + "/active-warning").json()["warning_active"])
             self.assertEqual(client.get(path).json()[0]["state"], "dispatching")
