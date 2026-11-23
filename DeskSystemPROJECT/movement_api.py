@@ -23,6 +23,11 @@ class HeightResponse(BaseModel):
     recording_error: str | None
     follow_up_error: str | None
     reading_id: int | None
+    movement_outcome: str = "unknown"
+    fault_codes: list[str] = Field(default_factory=list)
+    last_position_mm: int | None = None
+    last_speed_mms: int | None = None
+    at_target: bool | None = None
 
     @classmethod
     def from_result(cls, result):
@@ -32,14 +37,24 @@ class HeightResponse(BaseModel):
             "failed": "The simulator rejected the movement request.",
             "unknown": "Acceptance could not be confirmed. The desk may have moved; check its state before another request.",
         }
+        error = errors[result.status]
+        if result.outcome == "desk_error":
+            error = "A desk fault was detected. Check the desk before another request."
+        elif result.outcome == "unverified":
+            error = "Movement completion could not be verified. Check the desk before another request."
         return cls(
             desk_id=result.desk_id,
             requested_position_mm=result.requested_mm,
             accepted_position_mm=result.accepted_mm,
             command_id=result.command_id,
             status=result.status,
-            error=errors[result.status],
+            error=error,
             recording_error="Could not record the movement request." if result.record_error else None,
             follow_up_error="Could not retrieve or save the follow-up reading." if result.reading_error else None,
             reading_id=result.reading.reading_id if result.reading else None,
+            movement_outcome=result.outcome,
+            fault_codes=list(result.fault_codes),
+            last_position_mm=result.last_position_mm,
+            last_speed_mms=result.last_speed_mms,
+            at_target=result.at_target,
         )

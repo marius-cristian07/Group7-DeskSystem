@@ -182,6 +182,11 @@ def run_move(workflow, desk_id, height_mm, wait_s):
         else:
             _error(f"  WARNING: the follow-up reading was not saved: {result.reading_error}")
 
+        if result.outcome == "desk_error":
+            _error(f"  Desk fault detected: {', '.join(result.fault_codes)}. Check the desk before another command.")
+        elif result.outcome == "unverified":
+            _error("  Movement completion could not be verified. Check the desk before another command.")
+
     return 0 if result.succeeded else 1
 
 

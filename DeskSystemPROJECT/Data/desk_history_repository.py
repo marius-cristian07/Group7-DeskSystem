@@ -14,7 +14,11 @@ def get_desk_readings(desk_id, start=None, end=None, limit=50):
             recorded_at,
             position_mm,
             speed_mms,
-            status
+            status,
+            is_position_lost,
+            is_overload_protection_up,
+            is_overload_protection_down,
+            is_anti_collision
         FROM desk_readings
         WHERE desk_id = %s
     """

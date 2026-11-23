@@ -37,6 +37,7 @@ from typing import Dict, List, Optional, Tuple
 from ..Data.database import DatabaseError
 from ..Data.desk_api_client import DeskAPIError
 from .desk_workflow import MoveResult, WorkflowError, validate_movement
+from .desk_faults import classify_faults, movement_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +159,9 @@ class DeskView:
     last_position_mm: Optional[int]
     last_status: Optional[str]
     last_observed_at: Optional[datetime]
+    fault_codes: tuple = ()
+    last_speed_mms: Optional[int] = None
+    at_target: Optional[bool] = None
 
 
 @dataclass(frozen=True)
@@ -202,6 +206,9 @@ class _Desk:
     last_status: Optional[str] = None
     last_observed: Optional[float] = None
     poll_failed: bool = False
+    fault_codes: tuple = ()
+    last_speed_mms: Optional[int] = None
+    at_target: Optional[bool] = None
 
 
 @dataclass
@@ -229,13 +236,6 @@ class _Operation:
 class _Reservation:
     owner: str
     group: bool
-
-
-def has_error(state):
-    """The same rule the dashboard uses: a status other than Normal, or anti-collision.
-
-    The simulator's lastErrors list is history, not a current fault, so it is not used."""
-    return state.get("isAntiCollision") is True or str(state.get("status", "")).strip().lower() != "normal"
 
 
 class GroupOperationService:
@@ -378,8 +378,13 @@ class GroupOperationService:
             if error.status_code == 404:
                 return "missing", "the desk is not available"
             return "unreachable", "the desk could not be checked with the simulator"
-        if has_error(record["state"]):
-            return "error", f"the desk reports an error (status: {record['state']['status']})"
+        health = classify_faults(record["state"])
+        if health.blocks_movement:
+            try:
+                workflow.readings.save_desk(record)
+            except DatabaseError:
+                return "error", "the desk is not ready and its reading could not be saved"
+            return "error", f"the desk is {health.classification} (status: {record['state']['status']})"
         return None
 
     def create(self, desk_ids, target_mm, *, reason="Manager requested a group height change", automatic=False):
@@ -448,7 +453,7 @@ class GroupOperationService:
             )
         if faulty:
             raise GroupOperationError(
-                f"Desk(s) currently report an error: {', '.join(faulty)}. Nothing was created.", "desks_not_ready",
+                f"Desk(s) have a current fault or uncertain state: {', '.join(faulty)}. Nothing was created.", "desks_not_ready",
             )
 
     def _prune_locked(self):
@@ -663,7 +668,10 @@ class GroupOperationService:
             futures = {pool.submit(self._send_one, workflow, desk_id, operation.target_mm): desk_id for desk_id in ready}
             for future in as_completed(futures):
                 with self._lock:
-                    self._record_send(operation.desks[futures[future]], *future.result())
+                    desk = operation.desks[futures[future]]
+                    self._record_send(desk, *future.result())
+                    if desk.last_position_mm is not None:
+                        desk.last_observed = self._clock()
 
         with self._lock:
             if all(desk.result == R_NOT_SENT for desk in operation.desks.values()):
@@ -699,12 +707,26 @@ class GroupOperationService:
                 "invalid_input": "the desk ID or height was rejected",
                 "desk_not_found": "the desk is not available",
                 "simulator_unavailable": "the desk could not be verified with the simulator",
+                "desk_fault": "the desk reports a current fault",
+                "desk_uncertain": "the desk state is uncertain",
             }
             desk.result = R_NOT_SENT
             desk.detail = f"Not sent: {reasons.get(not_sent_reason, 'the movement configuration or database is unavailable')}."
             return
         desk.move = move
-        if move.status == "accepted":
+        desk.fault_codes = move.fault_codes
+        desk.last_position_mm = move.last_position_mm
+        desk.last_speed_mms = move.last_speed_mms
+        desk.at_target = move.at_target
+        if move.reading is not None:
+            desk.last_status = move.reading.status
+        if move.outcome == R_DESK_ERROR:
+            desk.result = R_DESK_ERROR
+            position = "at the target" if move.at_target else "away from the target"
+            desk.detail = (f"The desk is {position}, but a fault was detected: {', '.join(move.fault_codes)}. "
+                           f"Last reading: {move.last_position_mm} mm, speed {move.last_speed_mms} mm/s. "
+                           "No further command was sent.")
+        elif move.status == "accepted":
             desk.result = R_MOVING
             desk.detail = "Command accepted. Waiting for a fresh reading to confirm the target was reached."
         elif move.status == "failed":
@@ -716,10 +738,11 @@ class GroupOperationService:
                            "The command was not retried; check the desk before trying again.")
         if move.record_error:
             desk.detail += " The request could not be recorded in the command history."
+        if move.reading_error:
+            desk.detail += " The follow up reading could not be retrieved or saved."
 
     def _monitor(self, operation, workflow):
         """Poll fresh readings until each accepted desk is at its target, or time runs out."""
-        latest = {}  # last good record per desk, saved as a final reading
         while True:
             with self._lock:
                 waiting = [desk for desk in operation.desks.values() if desk.result == R_MOVING]
@@ -727,7 +750,7 @@ class GroupOperationService:
             if not waiting:
                 break
             for desk in waiting:
-                self._poll(operation, workflow, desk, latest)
+                self._poll(operation, workflow, desk)
             with self._lock:
                 if not any(desk.result == R_MOVING for desk in operation.desks.values()):
                     break
@@ -737,15 +760,10 @@ class GroupOperationService:
                     break
             self._sleep(min(self.settings.monitor_poll_s, remaining))
 
-        for desk_id, record in latest.items():
-            try:
-                workflow.readings.save_desk(record)  # so the history chart ends at the real position
-            except DatabaseError:
-                logger.warning("could not save the final reading of desk %s", desk_id)
         with self._lock:
             self._finalize_locked(operation)
 
-    def _poll(self, operation, workflow, desk, latest):
+    def _poll(self, operation, workflow, desk):
         try:
             record = workflow.api.get_desk(workflow.base_url, workflow.api_key, desk.desk_id)
         except DeskAPIError:
@@ -754,21 +772,37 @@ class GroupOperationService:
             return
         state = record["state"]
         accepted = desk.move.accepted_mm if desk.move.accepted_mm is not None else operation.target_mm
-        reached = abs(state["position_mm"] - accepted) <= self.settings.tolerance_mm and state["speed_mms"] == 0
+        health = classify_faults(state)
+        outcome = movement_outcome(state, accepted, self.settings.tolerance_mm)
+        # save every observation so a brief fault or a new history entry is kept
+        recording_failed = False
+        try:
+            workflow.readings.save_desk(record)
+        except DatabaseError:
+            recording_failed = True
+            logger.warning("could not save the reading of desk %s", desk.desk_id)
         with self._lock:
             desk.poll_failed = False
             desk.last_position_mm = state["position_mm"]
             desk.last_status = state["status"]
             desk.last_observed = self._clock()
-            if reached:
+            desk.last_speed_mms = state["speed_mms"]
+            desk.at_target = abs(state["position_mm"] - accepted) <= self.settings.tolerance_mm
+            desk.fault_codes = health.faults
+            if outcome == R_DESK_ERROR:
+                desk.result = R_DESK_ERROR
+                position = "at the target" if desk.at_target else "away from the target"
+                desk.detail = (f"The desk is {position}, but a fault was detected: {', '.join(health.faults)}. "
+                               f"Last reading: {state['position_mm']} mm, speed {state['speed_mms']} mm/s. "
+                               "No further command was sent.")
+            elif outcome == R_UNVERIFIED:
+                desk.result = R_UNVERIFIED
+                desk.detail = "The desk state is uncertain. Movement completion could not be confirmed."
+            elif outcome == R_REACHED:
                 desk.result = R_REACHED
                 desk.detail = f"A fresh reading confirms the desk is at {state['position_mm']} mm."
-                latest[desk.desk_id] = record
-            elif has_error(state):
-                desk.result = R_DESK_ERROR
-                desk.detail = (f"The desk reported an error while moving (status: {state['status']}) "
-                               f"and did not reach the target. Last reading: {state['position_mm']} mm.")
-                latest[desk.desk_id] = record
+            if recording_failed:
+                desk.detail += " This reading could not be saved to history."
 
     def _time_out_locked(self, operation):
         for desk in operation.desks.values():
@@ -803,10 +837,10 @@ class GroupOperationService:
         if state == COMPLETED:
             return "Every desk was confirmed at the target by a fresh reading."
         if state == PARTIAL_FAILURE:
-            return ("Some desks did not reach the target. See each desk's result. "
+            return ("Some desks do not have a confirmed successful result. See each desk's result. "
                     "Uncertain commands were not retried.")
         if state == FAILED:
-            return "No desk reached the target. See each desk's result. Uncertain commands were not retried."
+            return "No desk has a confirmed successful result. See each desk's result. Uncertain commands were not retried."
         if state == CANCELLED:
             return "Cancelled before dispatch. No movement command was sent."
         return operation.block_message or "Stopped before dispatch. No movement command was sent."
@@ -841,6 +875,7 @@ class GroupOperationService:
                 DeskView(
                     desk.desk_id, desk.result, desk.detail, desk.move,
                     desk.last_position_mm, desk.last_status, wall(desk.last_observed),
+                    desk.fault_codes, desk.last_speed_mms, desk.at_target,
                 )
                 for desk in operation.desks.values()
             ),

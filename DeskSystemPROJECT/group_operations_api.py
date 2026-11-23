@@ -64,6 +64,9 @@ class DeskResultResponse(BaseModel):
     last_position_mm: Optional[int] = None
     last_status: Optional[str] = None
     last_observed_at: Optional[datetime] = None
+    fault_codes: List[str] = Field(default_factory=list)
+    last_speed_mms: Optional[int] = None
+    at_target: Optional[bool] = None
 
 
 class GroupOperationResponse(BaseModel):
@@ -102,6 +105,9 @@ class GroupOperationResponse(BaseModel):
                 last_position_mm=desk.last_position_mm,
                 last_status=desk.last_status,
                 last_observed_at=desk.last_observed_at,
+                fault_codes=list(desk.fault_codes),
+                last_speed_mms=desk.last_speed_mms,
+                at_target=desk.at_target,
             ))
         return cls(
             operation_id=view.operation_id,
