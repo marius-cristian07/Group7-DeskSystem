@@ -11,6 +11,7 @@ from ..Data import desk_api_client, desk_command_repository, desk_repository
 from ..Data.desk_api_client import DeskAPIError
 from ..Data.desk_command_repository import STATUS_ACCEPTED, STATUS_FAILED, STATUS_UNKNOWN
 from ..Data.database import DatabaseError, get_database_connection
+from .desk_faults import classify_faults, movement_outcome
 
 
 class WorkflowError(Exception):
@@ -91,6 +92,11 @@ class MoveResult:
     record_error: Optional[str] = None   # set if the row could not be saved
     reading: Optional[DeskReading] = None
     reading_error: Optional[str] = None  # set if the follow-up reading failed
+    outcome: str = "unknown"
+    fault_codes: tuple = ()
+    last_position_mm: Optional[int] = None
+    last_speed_mms: Optional[int] = None
+    at_target: Optional[bool] = None
 
     @property
     def succeeded(self):
@@ -99,6 +105,7 @@ class MoveResult:
             self.status == STATUS_ACCEPTED
             and self.command_id is not None
             and self.reading is not None
+            and self.outcome in ("moving", "reached")
         )
 
 
@@ -240,6 +247,7 @@ class DeskWorkflow:
             # server error or unreadable acknowledgement may follow a real move.
             if error.status_code not in (400, 401, 403, 404, 405, 422):
                 result.status = STATUS_UNKNOWN
+            result.outcome = "rejected" if result.status == STATUS_FAILED else "unknown"
             result.error = _text(error)
 
         # 2. Record it, whatever the outcome.
@@ -274,6 +282,15 @@ class DeskWorkflow:
         try:
             # Check current availability even when the identity is already stored.
             record = self.api.get_desk(self.base_url, self.api_key, desk_id)
+            health = classify_faults(record["state"])
+            if health.blocks_movement:
+                # keep the evidence even though no command will be sent
+                self.readings.save_desk(record)
+                reason = "desk_fault" if health.classification == "faulty" else "desk_uncertain"
+                raise WorkflowError(
+                    f"Desk {desk_id} is {health.classification}: {', '.join(health.faults)}",
+                    reason=reason,
+                )
             if self.commands.desk_exists(desk_id):
                 return
             self.commands.save_desk_identity(record)
@@ -290,7 +307,15 @@ class DeskWorkflow:
             record = self.api.get_desk(self.base_url, self.api_key, result.desk_id)
         except DeskAPIError as error:
             result.reading_error = f"cannot retrieve desk again: {_text(error)}"
+            result.outcome = "unverified"
             return
+        state = record["state"]
+        target_mm = result.accepted_mm
+        result.fault_codes = classify_faults(state).faults
+        result.last_position_mm = state["position_mm"]
+        result.last_speed_mms = state["speed_mms"]
+        result.at_target = abs(state["position_mm"] - target_mm) <= 2
+        result.outcome = movement_outcome(state, target_mm)
         try:
             reading_id = self.readings.save_desk(record)
         except DatabaseError as error:

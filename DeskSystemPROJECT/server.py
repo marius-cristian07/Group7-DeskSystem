@@ -22,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .Data.desk_api_client import DeskAPIError, get_desk, get_desk_ids
 from .config import FRONTEND_PORT, get_simulator_config
 from .Domain.desk_workflow import DeskWorkflow, WorkflowError
+from .Domain.desk_faults import classify_faults
 from .Data.database import DatabaseError
 from .Data.desk_command_repository import desk_exists
 from .Data.desk_history_repository import get_desk_readings, get_desk_commands
@@ -247,6 +248,8 @@ def request_desk_height(
         errors = {
             "invalid_input": (422, "Invalid desk identifier or height. Nothing was sent."),
             "desk_not_found": (404, "Desk not found or unavailable. Nothing was sent."),
+            "desk_fault": (409, "The desk reports a current fault. Nothing was sent."),
+            "desk_uncertain": (409, "The desk state is uncertain. Nothing was sent."),
             "simulator_unavailable": (502, "Could not verify the desk with the simulator. Nothing was sent."),
             "unavailable": (503, "Movement configuration or database is unavailable. Nothing was sent."),
         }
@@ -287,6 +290,7 @@ def format_desk(desk_record):
 
     config = desk_record["config"]
     state = desk_record["state"]
+    health = classify_faults(state)
 
     return {
         "desk_id": desk_record["desk_id"],
@@ -295,6 +299,11 @@ def format_desk(desk_record):
         "speed_mms": state["speed_mms"],
         "status": state["status"],
         "is_anti_collision": state["isAntiCollision"],
+        "is_position_lost": state["isPositionLost"],
+        "is_overload_protection_up": state["isOverloadProtectionUp"],
+        "is_overload_protection_down": state["isOverloadProtectionDown"],
+        "health": health.classification,
+        "fault_codes": list(health.faults),
         "last_errors": desk_record["lastErrors"],
     }
 
