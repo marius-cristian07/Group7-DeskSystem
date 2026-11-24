@@ -6,7 +6,7 @@
 
 from .database import transaction
 from .desk_identity import upsert_desk
-
+from .desk_incident_repository import observe_reading
 
 def save_desk(desk_record):
     """Save the desk, reading, and errors together, or roll back all of them."""
@@ -46,4 +46,6 @@ def save_desk(desk_record):
                 """,
                 (reading_id, index, error["time_s"], error["errorCode"]),
             )
+        # S6-2: update incidents from the current desk state.
+        observe_reading(cursor, desk_record["desk_id"], state, reading_id)
     return reading_id

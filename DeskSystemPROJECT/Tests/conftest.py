@@ -30,28 +30,40 @@ def test_database_url():
 
 @pytest.fixture(scope="session")
 def create_test_schema(test_database_url):
-    """Create a clean schema once in the dedicated test database."""
-    schema_path = REPOSITORY_DIR / "database" / "001_initial_schema.sql"
-    schema_sql = schema_path.read_text(encoding="utf-8")
+    """Create a clean schema in the dedicated test database."""
+
+    migrations = sorted(
+        (REPOSITORY_DIR / "database").glob("[0-9][0-9][0-9]_*.sql")
+    )
 
     with psycopg2.connect(test_database_url) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
-                "DROP TABLE IF EXISTS desk_commands, desk_errors, "
+                "DROP TABLE IF EXISTS desk_incidents, "
+                "group_operation_desks, group_operations, "
+                "cleaning_runs, cleaning_schedule_desks, "
+                "cleaning_schedules, desk_commands, desk_errors, "
                 "desk_readings, desk CASCADE;"
             )
-            cursor.execute(schema_sql)
+
+            for migration in migrations:
+                cursor.execute(
+                    migration.read_text(encoding="utf-8")
+                )
 
 
 @pytest.fixture
 def postgres_test_db(monkeypatch, test_database_url, create_test_schema):
-    """Point application code at the test DB and clear rows before each test."""
+    """Use the test database and clear rows before each test."""
+
     monkeypatch.setenv("DATABASE_URL", test_database_url)
+
     with psycopg2.connect(test_database_url) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
-                "TRUNCATE desk_commands, desk_errors, desk_readings, desk "
-                "RESTART IDENTITY CASCADE;"
+                "TRUNCATE desk_incidents, group_operation_desks, "
+                "group_operations, desk_commands, desk_errors, "
+                "desk_readings, desk RESTART IDENTITY CASCADE;"
             )
 
 

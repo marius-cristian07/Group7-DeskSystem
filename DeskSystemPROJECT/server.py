@@ -13,6 +13,8 @@ import os
 import threading
 import time
 import serial
+from .Data import group_operation_repository
+from .Data.desk_incident_repository import list_incidents
 from contextlib import asynccontextmanager
 
 from datetime import datetime
@@ -134,18 +136,30 @@ def _run_cleaning_scheduler(group_service, stop_event):
 
 @asynccontextmanager
 async def lifespan(_app):
-    # keep the collector tied to the backend lifetime
+    # Keep the collector tied to the backend lifetime.
     stop_event = threading.Event()
     collector = None
-    if os.environ.get("DATABASE_URL", "").strip():
+
+    database_configured = bool(
+        os.environ.get("DATABASE_URL", "").strip()
+    )
+
+    if database_configured:
         try:
             interval = float(os.environ.get(
-                "DESK_HISTORY_INTERVAL_SECONDS", str(DEFAULT_HISTORY_INTERVAL)
+                "DESK_HISTORY_INTERVAL_SECONDS",
+                str(DEFAULT_HISTORY_INTERVAL),
             ))
         except ValueError:
-            raise ValueError("DESK_HISTORY_INTERVAL_SECONDS must be a positive number") from None
+            raise ValueError(
+                "DESK_HISTORY_INTERVAL_SECONDS must be a positive number"
+            ) from None
+
         if not math.isfinite(interval) or interval <= 0:
-            raise ValueError("DESK_HISTORY_INTERVAL_SECONDS must be a positive number")
+            raise ValueError(
+                "DESK_HISTORY_INTERVAL_SECONDS must be a positive number"
+            )
+
         collector = threading.Thread(
             target=_collect_history,
             args=(stop_event, interval),
@@ -154,49 +168,81 @@ async def lifespan(_app):
         )
         collector.start()
     else:
-        logger.info("desk history collection is off because DATABASE_URL is not set")
+        logger.info(
+            "desk history collection is off because DATABASE_URL is not set"
+        )
 
-    # group movements: warning, countdown, dispatch and monitoring (S5-1)
-
+    # S6-2: connect persistent group operation storage.
     group_service = GroupOperationService(
         lambda: get_movement_workflow(),
         GroupOperationSettings.from_env(),
+        store=group_operation_repository,
     )
-    _app.state.group_service = group_service
-    group_service.start()
 
+    _app.state.group_service = group_service
+
+    storage_ready = False
     scheduler_stop = threading.Event()
     scheduler_thread = None
     pico_thread = None
 
     try:
+        # Recover unfinished operations before allowing group movements.
+        if database_configured:
+            try:
+                group_service.recover_interrupted()
+            except DatabaseError:
+                logger.exception(
+                    "Could not recover unfinished group operations. "
+                    "Group movements are disabled until backend restart."
+                )
+            else:
+                group_service.start()
+                storage_ready = True
+        else:
+            logger.warning(
+                "DATABASE_URL is not configured. "
+                "Group movements are disabled."
+            )
+
         pico_port = os.environ.get("DESK_PICO_PORT")
-        if pico_port:
+
+        if pico_port and storage_ready:
             pico_thread = threading.Thread(
-                target=run_pico_warning, args=(pico_port, group_service, scheduler_stop),
-                name="pico_warning", daemon=True,
+                target=run_pico_warning,
+                args=(pico_port, group_service, scheduler_stop),
+                name="pico_warning",
+                daemon=True,
             )
             pico_thread.start()
+
         if os.environ.get("CLEANING_SCHEDULER_ENABLED") == "1":
-            if not os.environ.get("DATABASE_URL"):
+            if not database_configured:
                 raise RuntimeError(
                     "DATABASE_URL is required for the cleaning scheduler"
                 )
 
-            # Do not replay unfinished movements after a restart
-            interrupted = mark_interrupted_runs()
-            logger.info(
-                "Cleaning runs requiring review after restart: %s",
-                interrupted,
-            )
+            if storage_ready:
+                # Do not replay unfinished movements after a restart.
+                interrupted = mark_interrupted_runs()
 
-            scheduler_thread = threading.Thread(
-                target=_run_cleaning_scheduler,
-                args=(group_service, scheduler_stop),
-                name="cleaning_scheduler",
-                daemon=True,
-            )
-            scheduler_thread.start()
+                logger.info(
+                    "Cleaning runs requiring review after restart: %s",
+                    interrupted,
+                )
+
+                scheduler_thread = threading.Thread(
+                    target=_run_cleaning_scheduler,
+                    args=(group_service, scheduler_stop),
+                    name="cleaning_scheduler",
+                    daemon=True,
+                )
+                scheduler_thread.start()
+            else:
+                logger.warning(
+                    "Cleaning scheduler is disabled because "
+                    "operation storage recovery failed."
+                )
 
         yield
 
@@ -205,6 +251,7 @@ async def lifespan(_app):
 
         if scheduler_thread is not None:
             scheduler_thread.join(timeout=5)
+
         if pico_thread is not None:
             pico_thread.join(timeout=5)
 
@@ -415,4 +462,43 @@ def get_desk_command_history(
     return{
         "desk_id": desk_id,
         "commands": commands,
+    }
+
+
+@app.get("/api/desk-incidents")
+def get_desk_incidents(
+    desk_id: str | None = None,
+    operation_id: str | None = None,
+    active: bool | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0, le=100_000),
+):
+    """Return saved desk incidents, newest first."""
+
+    try:
+        incidents = list_incidents(
+            desk_id,
+            operation_id,
+            active,
+            limit,
+            offset,
+        )
+    except DatabaseError:
+        logger.exception(
+            "Database error while fetching desk incidents"
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Database error while fetching desk incidents",
+        ) from None
+
+    return {
+        "incidents": incidents,
+        "limit": limit,
+        "offset": offset,
+        "next_offset": (
+            offset + limit
+            if len(incidents) == limit
+            else None
+        ),
     }

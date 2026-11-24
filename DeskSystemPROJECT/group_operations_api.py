@@ -11,7 +11,7 @@ Purpose   : KAN-30 Reserve Pico acknowledgements for the USB connection.
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 from .Domain.group_operations import GroupOperationError, GroupOperationService, OperationView
@@ -67,6 +67,7 @@ class DeskResultResponse(BaseModel):
     fault_codes: List[str] = Field(default_factory=list)
     last_speed_mms: Optional[int] = None
     at_target: Optional[bool] = None
+    dispatch_intent_at: Optional[datetime] = None
 
 
 class GroupOperationResponse(BaseModel):
@@ -77,8 +78,8 @@ class GroupOperationResponse(BaseModel):
     desk_ids: List[str]
     target_position_mm: int
     created_at: datetime
-    countdown_seconds: float
-    acknowledgement_deadline: datetime
+    countdown_seconds: Optional[float]
+    acknowledgement_deadline: Optional[datetime]
     warning_deadline: Optional[datetime]
     seconds_remaining: Optional[float]
     dispatched_at: Optional[datetime]
@@ -89,12 +90,15 @@ class GroupOperationResponse(BaseModel):
     blocked_message: Optional[str]
     cancellable: bool
     desks: List[DeskResultResponse]
+    review_state: str = "not_required"
 
     @classmethod
     def from_view(cls, view: OperationView):
         desks = []
+
         for desk in view.desks:
             move = desk.move
+
             desks.append(DeskResultResponse(
                 desk_id=desk.desk_id,
                 result=desk.result,
@@ -108,7 +112,9 @@ class GroupOperationResponse(BaseModel):
                 fault_codes=list(desk.fault_codes),
                 last_speed_mms=desk.last_speed_mms,
                 at_target=desk.at_target,
+                dispatch_intent_at=desk.dispatch_intent_at,
             ))
+
         return cls(
             operation_id=view.operation_id,
             reason=view.reason,
@@ -124,20 +130,29 @@ class GroupOperationResponse(BaseModel):
             dispatched_at=view.dispatched_at,
             finished_at=view.finished_at,
             required_channels=list(view.required_channels),
-            acknowledgements=[AcknowledgementResponse(**vars(ack)) for ack in view.acknowledgements],
+            acknowledgements=[
+                AcknowledgementResponse(**vars(ack))
+                for ack in view.acknowledgements
+            ],
             blocked_code=view.blocked_code,
             blocked_message=view.blocked_message,
             cancellable=view.cancellable,
             desks=desks,
+            review_state=view.review_state,
+
         )
-
-
 class ActiveWarningsResponse(BaseModel):
     """What the Pico and the dashboard poll to know whether a warning must be shown."""
 
     warning_active: bool
     operations: List[GroupOperationResponse]
+class OperationHistoryResponse(BaseModel):
+    """One page of saved operations, newest first."""
 
+    operations: List[GroupOperationResponse]
+    limit: int
+    offset: int
+    next_offset: Optional[int]
 
 def get_group_service(request: Request) -> GroupOperationService:
     """The service created at startup; tests replace this dependency."""
@@ -171,7 +186,25 @@ def get_active_warning(service: GroupOperationService = Depends(get_group_servic
     operations = [GroupOperationResponse.from_view(view) for view in service.active_warnings()]
     return ActiveWarningsResponse(warning_active=bool(operations), operations=operations)
 
+@router.get("/history", response_model=OperationHistoryResponse)
+def get_group_operation_history(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=100_000),
+    service: GroupOperationService = Depends(get_group_service),
+):
+    """Return saved operations, including those from before a restart."""
 
+    views = _call(service.history, limit, offset)
+
+    return OperationHistoryResponse(
+        operations=[
+            GroupOperationResponse.from_view(view)
+            for view in views
+        ],
+        limit=limit,
+        offset=offset,
+        next_offset=offset + limit if len(views) == limit else None,
+    )
 @router.get("/{operation_id}", response_model=GroupOperationResponse)
 def get_group_operation(operation_id: str, service: GroupOperationService = Depends(get_group_service)):
     return GroupOperationResponse.from_view(_call(service.get, operation_id))

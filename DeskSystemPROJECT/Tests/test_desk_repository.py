@@ -21,13 +21,34 @@ class RepositoryTests(unittest.TestCase):
     def test_snapshot_is_one_transaction_with_ordered_errors(self):
         record = sample_desk()
         self.assertEqual(desk_repository.save_desk(record), 42)
+
         calls = self.cursor.execute.call_args_list
-        self.assertEqual(calls[0].args[1], (record["desk_id"], "DESK 4486", "Desk-O-Matic Co."))
-        self.assertEqual(calls[1].args[1], (record["desk_id"], 1320, 0, "Normal", 67, 18, False, False, False, False))
-        self.assertEqual([call.args[1] for call in calls[2:]], [
-            (42, index, error["time_s"], error["errorCode"])
-            for index, error in enumerate(record["lastErrors"])
-        ])
+
+        self.assertEqual(
+            calls[0].args[1],
+            (record["desk_id"], "DESK 4486", "Desk-O-Matic Co."),
+        )
+
+        self.assertEqual(
+            calls[1].args[1],
+            (
+                record["desk_id"], 1320, 0, "Normal",
+                67, 18, False, False, False, False,
+            ),
+        )
+
+        errors = record["lastErrors"]
+
+        self.assertEqual(
+            [call.args[1] for call in calls[2:2 + len(errors)]],
+            [
+                (42, index, error["time_s"], error["errorCode"])
+                for index, error in enumerate(errors)
+            ],
+        )
+
+        self.assertIn("desk_incidents", calls[-1].args[0])
+
         self.connect.assert_called_once()
         self.connection.__exit__.assert_called_once_with(None, None, None)
         self.connection.close.assert_called_once()

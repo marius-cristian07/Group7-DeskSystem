@@ -52,10 +52,13 @@ PARTIAL_FAILURE = "partial_failure"  # some desks reached the target, others did
 FAILED = "failed"                    # commands were sent but no desk reached the target
 CANCELLED = "cancelled"              # cancelled before dispatch; nothing was sent
 BLOCKED = "blocked"                  # stopped before dispatch; nothing was sent
+INTERRUPTED = "interrupted"
 
 ACTIVE_STATES = (PENDING_WARNING, COUNTDOWN, DISPATCHING, MONITORING)
 WARNING_STATES = (PENDING_WARNING, COUNTDOWN)  # the states in which cancelling still works
-
+REVIEW_NOT_REQUIRED = "not_required"
+REVIEW_NEEDED = "needs_review"
+_REVIEW_STATES = (PARTIAL_FAILURE, FAILED, INTERRUPTED)
 # ---------- result for one desk ----------
 
 R_PENDING = "pending"          # not sent yet
@@ -162,6 +165,7 @@ class DeskView:
     fault_codes: tuple = ()
     last_speed_mms: Optional[int] = None
     at_target: Optional[bool] = None
+    dispatch_intent_at: Optional[datetime] = None
 
 
 @dataclass(frozen=True)
@@ -180,8 +184,8 @@ class OperationView:
     desk_ids: Tuple[str, ...]
     target_position_mm: int
     created_at: datetime
-    countdown_seconds: float
-    acknowledgement_deadline: datetime
+    countdown_seconds: Optional[float]
+    acknowledgement_deadline: Optional[datetime]
     warning_deadline: Optional[datetime]    # when the countdown ends; None until it starts
     seconds_remaining: Optional[float]      # only while counting down
     dispatched_at: Optional[datetime]
@@ -192,6 +196,7 @@ class OperationView:
     blocked_message: Optional[str]
     cancellable: bool
     desks: Tuple[DeskView, ...]
+    review_state: str = REVIEW_NOT_REQUIRED
 
 
 # ---------- internal, mutable records (only touched under the lock) ----------
@@ -209,7 +214,7 @@ class _Desk:
     fault_codes: tuple = ()
     last_speed_mms: Optional[int] = None
     at_target: Optional[bool] = None
-
+    dispatch_intent: Optional[float] = None
 
 @dataclass
 class _Operation:
@@ -247,10 +252,13 @@ class GroupOperationService:
         wall_clock=time.time,
         sleep=time.sleep,
         spawn=None,
+        store=None,
     ):
         # workflow_factory returns a DeskWorkflow. Everything that talks to desks goes
         # through it, so the simulator client and the command history are shared.
         self._workflow_factory = workflow_factory
+        self._store = store
+        self._storage_ready = store is None
         self.settings = settings or GroupOperationSettings()
         # Time is injected so tests can run a 10-second countdown instantly.
         self._clock = clock
@@ -276,11 +284,21 @@ class GroupOperationService:
         threading.Thread(target=function, args=args, name="group_operation", daemon=True).start()
 
     def start(self):
-        """Start the timer that moves operations from one state to the next."""
+        """Start the timer that moves operations between states."""
+        if not self._storage_ready:
+            raise RuntimeError(
+                "Operation storage recovery has not completed"
+            )
+
         if self._supervisor is not None:
             return
+
         self._stop.clear()
-        self._supervisor = threading.Thread(target=self._supervise, name="group_supervisor", daemon=True)
+        self._supervisor = threading.Thread(
+            target=self._supervise,
+            name="group_supervisor",
+            daemon=True,
+        )
         self._supervisor.start()
 
     def stop(self):
@@ -293,6 +311,31 @@ class GroupOperationService:
             for operation in self._operations.values():
                 if operation.state in WARNING_STATES:
                     self._cancel_locked(operation, "The backend was shut down before dispatch.")
+
+    def recover_interrupted(self):
+        """Recover unfinished operations before starting the service."""
+        if self._store is None:
+            return []
+
+        with self._lock:
+            if self._operations or self._supervisor is not None:
+                raise RuntimeError(
+                    "Recovery must run before the service starts"
+                )
+
+            self._storage_ready = False
+
+            operation_ids = self._store.mark_interrupted_operations()
+
+            self._storage_ready = True
+
+        for operation_id in operation_ids:
+            logger.warning(
+                "Group operation %s was interrupted and needs review",
+                operation_id,
+            )
+
+        return operation_ids
 
     def _supervise(self):
         while not self._stop.wait(0.2):
@@ -387,37 +430,77 @@ class GroupOperationService:
             return "error", f"the desk is {health.classification} (status: {record['state']['status']})"
         return None
 
-    def create(self, desk_ids, target_mm, *, reason="Manager requested a group height change", automatic=False):
-        """Create a group operation and publish its warning. No desk is moved."""
+    def create(
+        self,
+        desk_ids,
+        target_mm,
+        *,
+        reason="Manager requested a group height change",
+        automatic=False,
+    ):
+        """Create a group operation and publish its warning."""
+
+        with self._lock:
+            if not self._storage_ready:
+                raise GroupOperationError(
+                    "Operation storage is unavailable. Nothing was created.",
+                    "unavailable",
+                )
+
         desk_ids = self._validate(desk_ids, target_mm)
         operation_id = uuid.uuid4().hex
-        # Reserve first, so two requests for the same desk cannot both get past the checks.
-        self._reserve(desk_ids, operation_id, True, "Nothing was created.")
+
+        self._reserve(
+            desk_ids,
+            operation_id,
+            True,
+            "Nothing was created.",
+        )
+
         try:
             workflow = self._workflow_factory()
+
             try:
-                workflow.api.validate_config(workflow.base_url, workflow.api_key)
+                workflow.api.validate_config(
+                    workflow.base_url,
+                    workflow.api_key,
+                )
             except DeskAPIError:
                 raise GroupOperationError(
-                    "The simulator address or API key is not configured. Nothing was created.", "unavailable",
+                    "The simulator address or API key is not configured. "
+                    "Nothing was created.",
+                    "unavailable",
                 ) from None
+
             try:
                 workflow.connect().close()
             except DatabaseError:
                 raise GroupOperationError(
-                    "The database is unavailable, so movements could not be recorded. Nothing was created.",
+                    "The database is unavailable, so movements could not "
+                    "be recorded. Nothing was created.",
                     "unavailable",
                 ) from None
+
             self._check_desks_now(workflow, desk_ids)
+
         except BaseException:
             self._release(desk_ids, operation_id)
             raise
 
         with self._lock:
+            if not self._storage_ready:
+                self._release(desk_ids, operation_id)
+                raise GroupOperationError(
+                    "Operation storage is unavailable. Nothing was created.",
+                    "unavailable",
+                )
+
             now = self._clock()
             channels = self.settings.required_channels
+
             if automatic and "pico" not in channels:
                 channels = (*channels, "pico")
+
             operation = _Operation(
                 operation_id=operation_id,
                 reason=reason,
@@ -427,11 +510,37 @@ class GroupOperationService:
                 created=now,
                 wall_origin=self._wall_clock(),
                 ack_deadline=now + self.settings.ack_timeout_s,
-                desks={desk_id: _Desk(desk_id) for desk_id in desk_ids},
+                desks={
+                    desk_id: _Desk(desk_id)
+                    for desk_id in desk_ids
+                },
             )
+
+            try:
+                self._persist_locked(operation, required=True)
+            except Exception:
+                logger.exception(
+                    "Could not save new group operation %s",
+                    operation_id,
+                )
+                self._release(desk_ids, operation_id)
+
+                raise GroupOperationError(
+                    "The operation could not be saved in the database. "
+                    "Nothing was started.",
+                    "unavailable",
+                ) from None
+
             self._operations[operation_id] = operation
             self._prune_locked()
-            logger.info("group operation %s created for %d desk(s), target %d mm", operation_id, len(desk_ids), target_mm)
+
+            logger.info(
+                "Group operation %s created for %d desk(s), target %d mm",
+                operation_id,
+                len(desk_ids),
+                target_mm,
+            )
+
             return self._view_locked(operation, now)
 
     def _check_desks_now(self, workflow, desk_ids):
@@ -465,8 +574,80 @@ class GroupOperationService:
     # ---------- reading ----------
 
     def get(self, operation_id):
+        """Return a live or previously saved operation."""
+
         with self._lock:
-            return self._view_locked(self._find_locked(operation_id), self._clock())
+            operation = self._operations.get(operation_id)
+
+            if operation is not None:
+                return self._view_locked(
+                    operation,
+                    self._clock(),
+                )
+
+        if self._store is None:
+            raise GroupOperationError(
+                "Group operation not found",
+                "not_found",
+            )
+
+        try:
+            stored = self._store.load_operation(operation_id)
+        except Exception:
+            logger.exception(
+                "Could not read group operation %s",
+                operation_id,
+            )
+            raise GroupOperationError(
+                "The operation history could not be read.",
+                "unavailable",
+            ) from None
+
+        if stored is None:
+            raise GroupOperationError(
+                "Group operation not found",
+                "not_found",
+            )
+
+        return self._view_from_rows(*stored)
+    def history(self, limit=20, offset=0):
+        """Return one bounded page of saved operations."""
+
+        if self._store is None:
+            raise GroupOperationError(
+                "Operation history needs the database.",
+                "unavailable",
+            )
+
+        if not 1 <= limit <= 100 or offset < 0:
+            raise GroupOperationError(
+                "Limit must be 1-100 and offset at least 0.",
+                "invalid_input",
+            )
+
+        try:
+            page = self._store.list_operations(limit, offset)
+        except Exception:
+            logger.exception(
+                "Could not read group operation history"
+            )
+            raise GroupOperationError(
+                "The operation history could not be read.",
+                "unavailable",
+            ) from None
+
+        with self._lock:
+            now = self._clock()
+
+            return [
+                self._view_locked(
+                    self._operations[row["operation_id"]],
+                    now,
+                )
+                if row["operation_id"] in self._operations
+                else self._view_from_rows(row, desks)
+                for row, desks in page
+            ]
 
     def active_warnings(self):
         """Operations whose warning is currently running, for the Pico and the dashboard."""
@@ -518,6 +699,7 @@ class GroupOperationService:
             if operation.state == PENDING_WARNING and all(c in operation.acks for c in operation.required_channels):
                 operation.state = COUNTDOWN
                 operation.warning_deadline = now + self.settings.countdown_s
+                self._persist_locked(operation, desks=())
                 logger.info("group operation %s: warning acknowledged, countdown started", operation_id)
             return self._view_locked(operation, now)
 
@@ -586,6 +768,17 @@ class GroupOperationService:
                 # The commitment point. From here, cancel() is refused.
                 operation.state = DISPATCHING
                 operation.dispatched = now
+                if not self._storage_ready or not self._persist_locked(
+                    operation, desks=()
+                ):
+                    operation.dispatched = None
+                    self._block_locked(
+                        operation,
+                        "storage_unavailable",
+                        "The dispatch state could not be saved. "
+                        "No movement command was sent.",
+                    )
+                    return
                 logger.info("group operation %s: dispatching", operation.operation_id)
                 self._spawn(self._run, operation.operation_id)
 
@@ -593,7 +786,7 @@ class GroupOperationService:
         for desk in operation.desks.values():
             if desk.result == R_PENDING:
                 desk.result = R_NOT_SENT
-                desk.detail = "Not sent: the warning could not be confirmed."
+                desk.detail = f"Not sent: {message}"
         operation.block_code, operation.block_message = code, message
         self._finish_locked(operation, BLOCKED)
         logger.warning("group operation %s blocked: %s", operation.operation_id, message)
@@ -601,7 +794,91 @@ class GroupOperationService:
     def _finish_locked(self, operation, state):
         operation.state = state
         operation.finished = self._clock()
+
+        if not self._persist_locked(operation):
+            operation.state = INTERRUPTED
+            operation.block_code = "storage_unavailable"
+            operation.block_message = (
+                "The final result could not be saved. "
+                "Check each desk's result before continuing."
+            )
+            self._storage_ready = False
+
         self._release(operation.desk_ids, operation.operation_id)
+    # ---------- persistent storage (S6-2) ----------
+
+    def _persist_locked(self, operation, desks=None, required=False):
+        """Save the operation and its desk results."""
+        if self._store is None:
+            return True
+
+        desks = operation.desks.values() if desks is None else desks
+
+        try:
+            self._store.save_operation(
+                self._operation_row(operation),
+                [
+                    self._desk_row(operation, desk)
+                    for desk in desks
+                ],
+            )
+            return True
+
+        except Exception:
+            if required:
+                raise
+
+            logger.exception(
+                "Could not save group operation %s",
+                operation.operation_id,
+            )
+            return False
+
+    def _operation_row(self, operation):
+        def wall(moment):
+            if moment is None:
+                return None
+            return self._wall(operation, moment)
+
+        return {
+            "operation_id": operation.operation_id,
+            "reason": operation.reason,
+            "target_position_mm": operation.target_mm,
+            "state": operation.state,
+            "required_channels": list(operation.required_channels),
+            "created_at": wall(operation.created),
+            "dispatched_at": wall(operation.dispatched),
+            "finished_at": wall(operation.finished),
+            "blocked_code": operation.block_code,
+            "blocked_message": operation.block_message,
+            "review_state": (
+                REVIEW_NEEDED
+                if operation.state in _REVIEW_STATES
+                else REVIEW_NOT_REQUIRED
+            ),
+        }
+
+    def _desk_row(self, operation, desk):
+        move = desk.move
+
+        return {
+            "desk_id": desk.desk_id,
+            "result": desk.result,
+            "detail": desk.detail,
+            "command_id": move.command_id if move else None,
+            "command_status": move.status if move else None,
+            "accepted_position_mm": move.accepted_mm if move else None,
+            "last_position_mm": desk.last_position_mm,
+            "last_speed_mms": desk.last_speed_mms,
+            "last_status": desk.last_status,
+            "last_observed_at": (
+                None
+                if desk.last_observed is None
+                else self._wall(operation, desk.last_observed)
+            ),
+            "fault_codes": list(desk.fault_codes),
+            "at_target": desk.at_target,
+        }
 
     def _finalize_locked(self, operation, block=None):
         """Choose the final state from the per-desk results."""
@@ -633,7 +910,19 @@ class GroupOperationService:
             with self._lock:
                 for desk in operation.desks.values():
                     if desk.result == R_PENDING:
-                        desk.result, desk.detail = R_NOT_SENT, "Not sent: an unexpected error stopped the operation."
+                        if desk.dispatch_intent is not None:
+                            desk.result = R_UNKNOWN
+                            desk.detail = (
+                                "An unexpected error stopped the operation. "
+                                "The desk may have moved. "
+                                "The command was not retried."
+                            )
+                        else:
+                            desk.result = R_NOT_SENT
+                            desk.detail = (
+                                "Not sent: an unexpected error "
+                                "stopped the operation."
+                            )
                     elif desk.result == R_MOVING:
                         desk.result = R_UNVERIFIED
                         desk.detail = "The command was accepted, but monitoring failed unexpectedly. The final position is unknown."
@@ -665,13 +954,19 @@ class GroupOperationService:
         # One command per desk, sent together so the group starts moving at about the same time.
         workers = max(1, min(len(ready), self.settings.max_parallel_sends))
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {pool.submit(self._send_one, workflow, desk_id, operation.target_mm): desk_id for desk_id in ready}
+            futures = {
+                pool.submit(
+                    self._send_one, operation, workflow, desk_id
+                ): desk_id
+                for desk_id in ready
+            }
             for future in as_completed(futures):
                 with self._lock:
                     desk = operation.desks[futures[future]]
                     self._record_send(desk, *future.result())
                     if desk.last_position_mm is not None:
                         desk.last_observed = self._clock()
+                    self._persist_locked(operation, [desk])
 
         with self._lock:
             if all(desk.result == R_NOT_SENT for desk in operation.desks.values()):
@@ -682,18 +977,47 @@ class GroupOperationService:
                 return False
             operation.state = MONITORING
             operation.monitor_deadline = self._clock() + self.settings.monitor_timeout_s
+
+            self._persist_locked(operation)
             return True
 
-    @staticmethod
-    def _send_one(workflow, desk_id, target_mm):
-        """Send one command through the shared workflow. Never raises, never retries."""
+    def _send_one(self, operation, workflow, desk_id):
+        """Save dispatch intent and send one command without retries."""
+
+        if self._store is not None:
+            with self._lock:
+                if not self._storage_ready:
+                    return None, "intent_not_saved"
+
+                try:
+                    self._store.record_dispatch_intent(
+                        operation.operation_id,
+                        desk_id,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Could not save dispatch intent for desk %s",
+                        desk_id,
+                    )
+                    return None, "intent_not_saved"
+
+                operation.desks[desk_id].dispatch_intent = self._clock()
+
         try:
-            return workflow.request_height(desk_id, target_mm), None
+            return workflow.request_height(
+                desk_id,
+                operation.target_mm,
+            ), None
+
         except WorkflowError as error:
-            return None, error.reason  # raised only when nothing was sent
+            return None, error.reason
+
         except Exception:
-            logger.exception("sending to desk %s failed unexpectedly", desk_id)
-            return None, "unexpected"  # the command may or may not have been sent
+            logger.exception(
+                "Sending to desk %s failed unexpectedly",
+                desk_id,
+            )
+            return None, "unexpected"
 
     @staticmethod
     def _record_send(desk, move, not_sent_reason):
@@ -709,6 +1033,7 @@ class GroupOperationService:
                 "simulator_unavailable": "the desk could not be verified with the simulator",
                 "desk_fault": "the desk reports a current fault",
                 "desk_uncertain": "the desk state is uncertain",
+                "intent_not_saved": "the dispatch could not be recorded in the database first",
             }
             desk.result = R_NOT_SENT
             desk.detail = f"Not sent: {reasons.get(not_sent_reason, 'the movement configuration or database is unavailable')}."
@@ -804,6 +1129,8 @@ class GroupOperationService:
             if recording_failed:
                 desk.detail += " This reading could not be saved to history."
 
+            self._persist_locked(operation, [desk])
+
     def _time_out_locked(self, operation):
         for desk in operation.desks.values():
             if desk.result != R_MOVING:
@@ -843,6 +1170,11 @@ class GroupOperationService:
             return "No desk has a confirmed successful result. See each desk's result. Uncertain commands were not retried."
         if state == CANCELLED:
             return "Cancelled before dispatch. No movement command was sent."
+        if state == INTERRUPTED:
+            return operation.block_message or (
+                "The operation was interrupted and needs review. "
+                "No command was retried."
+            )
         return operation.block_message or "Stopped before dispatch. No movement command was sent."
 
     def _view_locked(self, operation, now):
@@ -874,9 +1206,76 @@ class GroupOperationService:
             desks=tuple(
                 DeskView(
                     desk.desk_id, desk.result, desk.detail, desk.move,
-                    desk.last_position_mm, desk.last_status, wall(desk.last_observed),
-                    desk.fault_codes, desk.last_speed_mms, desk.at_target,
+                    desk.last_position_mm, desk.last_status,
+                    wall(desk.last_observed),
+                    desk.fault_codes, desk.last_speed_mms,
+                    desk.at_target,
+                    wall(desk.dispatch_intent),
                 )
                 for desk in operation.desks.values()
             ),
+            review_state=(
+                REVIEW_NEEDED
+                if operation.state in _REVIEW_STATES
+                else REVIEW_NOT_REQUIRED
+            ),
+        )
+
+    def _view_from_rows(self, row, desk_rows):
+        """Convert saved database rows into a historical operation."""
+
+        desks = []
+
+        for desk in desk_rows:
+            move = None
+
+            if desk["command_status"] is not None:
+                move = MoveResult(
+                    desk["desk_id"],
+                    row["target_position_mm"],
+                    desk["command_status"],
+                    accepted_mm=desk["accepted_position_mm"],
+                    command_id=desk["command_id"],
+                )
+
+            desks.append(
+                DeskView(
+                    desk_id=desk["desk_id"],
+                    result=desk["result"],
+                    detail=desk["detail"],
+                    move=move,
+                    last_position_mm=desk["last_position_mm"],
+                    last_status=desk["last_status"],
+                    last_observed_at=desk["last_observed_at"],
+                    fault_codes=tuple(desk["fault_codes"] or ()),
+                    last_speed_mms=desk["last_speed_mms"],
+                    at_target=desk["at_target"],
+                    dispatch_intent_at=desk["dispatch_intent_at"],
+                )
+            )
+
+        return OperationView(
+            operation_id=row["operation_id"],
+            reason=row["reason"],
+            state=row["state"],
+            message=(
+                row["blocked_message"]
+                or f"Saved group operation: {row['state']}."
+            ),
+            desk_ids=tuple(desk.desk_id for desk in desks),
+            target_position_mm=row["target_position_mm"],
+            created_at=row["created_at"],
+            countdown_seconds=None,
+            acknowledgement_deadline=None,
+            warning_deadline=None,
+            seconds_remaining=None,
+            dispatched_at=row["dispatched_at"],
+            finished_at=row["finished_at"],
+            required_channels=tuple(row["required_channels"]),
+            acknowledgements=(),
+            blocked_code=row["blocked_code"],
+            blocked_message=row["blocked_message"],
+            cancellable=False,
+            desks=tuple(desks),
+            review_state=row["review_state"],
         )
