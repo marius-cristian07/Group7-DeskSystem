@@ -10,14 +10,20 @@
 #include <atomic>
 #include <string>
 
-enum class HealthResult { pending, unavailable, available };
+enum class HealthResult
+{
+    pending,
+    unavailable,
+    available
+};
 
 static std::atomic<HealthResult> health_result{HealthResult::unavailable};
 
 static err_t discard_health_body(void *, altcp_pcb *connection,
                                  pbuf *body, err_t error)
 {
-    if (body != nullptr) {
+    if (body != nullptr)
+    {
         altcp_recved(connection, body->tot_len);
         pbuf_free(body);
     }
@@ -35,7 +41,8 @@ static void save_health_result(void *, httpc_result_t result,
 static void check_backend()
 {
     ip_addr_t address;
-    if (!ipaddr_aton(BACKEND_IP, &address)) {
+    if (!ipaddr_aton(BACKEND_IP, &address))
+    {
         printf("Invalid backend IP address\n");
         health_result.store(HealthResult::unavailable);
         return;
@@ -50,14 +57,15 @@ static void check_backend()
                                   &settings, discard_health_body, nullptr, nullptr);
     cyw43_arch_lwip_end();
 
-    if (result != ERR_OK) {
+    if (result != ERR_OK)
+    {
         printf("Could not start health check (%d)\n", static_cast<int>(result));
         health_result.store(HealthResult::unavailable);
     }
 }
 
-constexpr uint LED_RED = 10;
-constexpr uint BUTTON = 7;
+constexpr uint LED_RED = 7;
+constexpr uint BUTTON = 10;
 constexpr uint BUZZER = 20;
 constexpr int BLINKPHASE_MS = 250;
 
@@ -75,7 +83,7 @@ void warnsignalSet(bool on)
 
 void buttonPressedCallback(uint, uint32_t)
 {
-    buttonPressed = true;  // Remember a short press between two USB messages.
+    buttonPressed = true; // Remember a short press between two USB messages.
 }
 
 void warningInit()
@@ -88,8 +96,9 @@ void warningInit()
 
     gpio_init(BUTTON);
     gpio_set_dir(BUTTON, GPIO_IN);
-    gpio_pull_up(BUTTON);
-    gpio_set_irq_enabled_with_callback(BUTTON, GPIO_IRQ_EDGE_FALL, true, buttonPressedCallback);
+    // The carrier board button is expected to drive GP10 high when pressed.
+    gpio_pull_down(BUTTON);
+    gpio_set_irq_enabled_with_callback(BUTTON, GPIO_IRQ_EDGE_RISE, true, buttonPressedCallback);
 }
 
 void stopWarning()
@@ -100,7 +109,8 @@ void stopWarning()
 
 void handleWarningCommand(const std::string &line)
 {
-    if (line == "STOP") {
+    if (line == "STOP")
+    {
         stopWarning();
         movementId.clear();
         printf("IDLE\n");
@@ -109,46 +119,61 @@ void handleWarningCommand(const std::string &line)
 
     // Each command belongs to one movement, e.g. START followed by its ID.
     const auto space = line.find(' ');
-    if (space == std::string::npos) return;
+    if (space == std::string::npos)
+        return;
     const std::string command = line.substr(0, space);
     const std::string id = line.substr(space + 1);
-    if (id.size() != 32) return;
+    if (id.size() != 32)
+        return;
 
-    if (command == "START" && movementId.empty()) {
+    if (command == "START" && movementId.empty())
+    {
         movementId = id;
         buttonPressed = false;
         warningStarted = get_absolute_time();
         warningActive = true;
-        warnsignalSet(!buttonPressed && gpio_get(BUTTON));
+        warnsignalSet(!buttonPressed && !gpio_get(BUTTON));
     }
-    if (id != movementId) {
+    if (id != movementId)
+    {
         printf("UNKNOWN %s\n", id.c_str());
         return;
     }
 
     usbTimeout = make_timeout_time_ms(2000);
-    if (buttonPressed || !gpio_get(BUTTON)) {
+    if (buttonPressed || gpio_get(BUTTON))
+    {
         buttonPressed = true;
         stopWarning();
         printf("CANCEL %s\n", id.c_str());
-    } else if (warningActive && command == "FINISH") {
+    }
+    else if (warningActive && command == "FINISH")
+    {
         stopWarning();
-        const bool cancelled = buttonPressed || !gpio_get(BUTTON);
+        const bool cancelled = buttonPressed || gpio_get(BUTTON);
         printf("%s %s\n", cancelled ? "CANCEL" : "CLEAR", id.c_str());
-    } else if (warningActive && (command == "POLL" || command == "START")) {
+    }
+    else if (warningActive && (command == "POLL" || command == "START"))
+    {
         printf("ACTIVE %s\n", id.c_str());
-    } else {
+    }
+    else
+    {
         printf("UNKNOWN %s\n", id.c_str());
     }
 }
 
 void updateWarning()
 {
-    if (warningActive) {
-        if (buttonPressed || time_reached(usbTimeout)) {
+    if (warningActive)
+    {
+        if (buttonPressed || time_reached(usbTimeout))
+        {
             buttonPressed = true;
             stopWarning();
-        } else {
+        }
+        else
+        {
             const int64_t elapsedMs = absolute_time_diff_us(warningStarted, get_absolute_time()) / 1000;
             warnsignalSet((elapsedMs / BLINKPHASE_MS) % 2 == 0);
         }
@@ -156,11 +181,16 @@ void updateWarning()
 
     static std::string line;
     int ch;
-    while ((ch = getchar_timeout_us(0)) >= 0) {
-        if (ch == '\n') {
-            if (line.size() < 64) handleWarningCommand(line);
+    while ((ch = getchar_timeout_us(0)) >= 0)
+    {
+        if (ch == '\n')
+        {
+            if (line.size() < 64)
+                handleWarningCommand(line);
             line.clear();
-        } else if (ch != '\r' && line.size() < 64) {
+        }
+        else if (ch != '\r' && line.size() < 64)
+        {
             line += static_cast<char>(ch);
         }
     }
@@ -171,7 +201,8 @@ int main()
     stdio_init_all();
     warningInit();
     const bool wifi_ready = cyw43_arch_init() == 0;
-    if (wifi_ready) {
+    if (wifi_ready)
+    {
         cyw43_arch_enable_sta_mode();
         cyw43_arch_wifi_connect_async(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK);
     }
@@ -180,13 +211,17 @@ int main()
     bool led_on = false;
     absolute_time_t next_check = get_absolute_time();
     absolute_time_t next_led = get_absolute_time();
-    while (true) {
+    while (true)
+    {
         updateWarning();
-        if (wifi_ready && time_reached(next_led)) {
+        if (wifi_ready && time_reached(next_led))
+        {
             const auto status = health_result.load();
-            if (status != HealthResult::pending) {
+            if (status != HealthResult::pending)
+            {
                 backend_available = status == HealthResult::available;
-                if (time_reached(next_check)) {
+                if (time_reached(next_check))
+                {
                     check_backend();
                     next_check = make_timeout_time_ms(5000);
                 }
