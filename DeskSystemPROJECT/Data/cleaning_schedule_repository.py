@@ -1,7 +1,12 @@
 """PostgreSQL storage for S5-2 cleaning schedules and runs."""
 
+import logging
+
 from ..Domain.cleaning_schedule_validation import schedules_overlap
 from .database import transaction
+from .review_repository import describe_blockers, find_start_blockers, lock_review_state
+
+logger = logging.getLogger(__name__)
 
 
 class ScheduleConflictError(Exception):
@@ -191,8 +196,15 @@ def claimed_occurrence_dates(schedule_id, since):
 
 
 def claim_cleaning_start(schedule_id, occurrence_date, scheduled_start_utc=None):
-    """Claim one daily start. Lock schedule to serialize with edits and disable."""
+    """Claim one daily start. Lock schedule to serialize with edits and disable.
+
+    A start is refused, and recorded as a blocked run, while any desk of the schedule has an
+    unresolved cleaning run, group operation or desk incident (S6-3). That includes problems
+    that came from other schedules sharing the desk."""
     with transaction() as cursor:
+        # Same lock as resolutions and group-operation writes. It is taken first, so every
+        # transaction takes the locks in the same order.
+        lock_review_state(cursor)
         cursor.execute(
             """
             SELECT is_enabled, created_at FROM cleaning_schedules
@@ -205,6 +217,26 @@ def claim_cleaning_start(schedule_id, occurrence_date, scheduled_start_utc=None)
             return None
         # A schedule created after today's start must not move immediately.
         if scheduled_start_utc is not None and schedule[1] > scheduled_start_utc:
+            return None
+        cursor.execute(
+            "SELECT desk_id FROM cleaning_schedule_desks WHERE schedule_id = %s ORDER BY desk_id",
+            (schedule_id,),
+        )
+        blockers = find_start_blockers(cursor, [row[0] for row in cursor.fetchall()])
+        if blockers:
+            # The occurrence is used up. Resolving later never starts it, so no catch-up movement.
+            reason = describe_blockers(blockers)
+            cursor.execute(
+                """
+                INSERT INTO cleaning_runs (schedule_id, occurrence_date, status, blocked_reason)
+                VALUES (%s, %s, 'blocked', %s)
+                ON CONFLICT (schedule_id, occurrence_date) DO NOTHING
+                RETURNING run_id
+                """,
+                (schedule_id, occurrence_date, reason),
+            )
+            if cursor.fetchone():
+                logger.warning("Cleaning schedule %s on %s: %s", schedule_id, occurrence_date, reason)
             return None
         cursor.execute(
             """

@@ -1,7 +1,7 @@
 export const RUN_LABELS = {
   scheduled: 'Scheduled', raising: 'Raising', returning: 'Returning', completed: 'Completed',
   cancelled: 'Cancelled', blocked: 'Blocked',
-  cleaning: 'Cleaning window', needs_review: 'Needs review',
+  cleaning: 'Cleaning window', needs_review: 'Needs review', resolved: 'Resolved',
 };
 
 const validTime = (value) => /^([01]\d|2[0-3]):[0-5]\d$/.test(value);

@@ -379,3 +379,15 @@ Remove-Item Env:DESK_RUN_MOVEMENT_TESTS
 The isolated integration check runs the real simulator HTTP handler and desk
 model on a temporary port with test storage. It verifies one desk moves and
 the other remains unchanged; it does not verify a live PostgreSQL write.
+
+
+## S6-3 Review and resolution (see docs/s6-3-review-workflow.md)
+
+- POST /api/cleaning-schedules/runs/{run_id}/resolve
+- POST /api/group-operations/{operation_id}/resolve
+- POST /api/desk-incidents/{incident_id}/resolve
+  Body: decision (inspected_ok, moved_manually, fault_repaired, nothing_to_review), explanation (10-1000 chars), resolved_by (optional).
+  Needs fresh healthy, stationary readings of every involved desk. Sends no movement command.
+  Errors: 404 unknown, 409 not reviewable / desks not ready, 422 invalid input, 502 simulator, 503 database.
+- POST /api/desk-incidents/{incident_id}/acknowledge  Body: note, acknowledged_by (optional). Does not resolve.
+- GET /api/reviews/unresolved?desk_id=  and  GET /api/reviews/records?subject_type=&subject_id=&limit=

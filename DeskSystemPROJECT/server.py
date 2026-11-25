@@ -32,6 +32,7 @@ from .Domain.group_operations import DeskBusyError, GroupOperationError, GroupOp
 from .group_operations_api import get_group_service, router as group_operations_router
 from .movement_api import HeightRequest, HeightResponse
 from .cleaning_schedules_api import router as cleaning_schedules_router
+from .review_api import router as review_router
 from .Domain.cleaning_scheduler import CleaningScheduler
 from .Data.cleaning_schedule_repository import mark_interrupted_runs
 
@@ -266,6 +267,7 @@ async def lifespan(_app):
 app = FastAPI(lifespan=lifespan)
 app.include_router(group_operations_router)
 app.include_router(cleaning_schedules_router)
+app.include_router(review_router)
 
 
 def get_movement_workflow():
