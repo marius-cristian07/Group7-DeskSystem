@@ -1,3 +1,4 @@
+
 # S6 fault classification and movement results
 
 `Domain/desk_faults.py` contains the shared rules used by individual movement,
@@ -18,7 +19,10 @@ still evidence of a fault even if the status is uncertain.
 `lastErrors` is historical evidence and never decides the current condition.
 Snapshots keep these entries with their original time and code. Repeated entries
 can occur in multiple snapshots and must not be counted as new incidents merely
-because another snapshot contains them. No new incident table is introduced.
+because another snapshot contains them.
+
+Since S6-2, active faults are recorded in the `desk_incidents` table.
+Historical `lastErrors` entries do not create new incidents.
 
 ## Movement results
 
@@ -51,6 +55,47 @@ cleaning recovery maps failed and partially failed movements to `needs_review`,
 so it cannot automatically return desks after a faulty raise. Interrupted runs
 also require review after restart.
 
-Detailed group operation views still live in memory. This task does not add
-persistent group operation results or a manager resolution endpoint. Saved desk
-readings and cleaning run review status use the existing database tables.
+Since S6-2, detailed group operation results are persisted in PostgreSQL and
+remain available after a backend restart.
+
+## Persistent incidents (S6-2)
+
+Current faults are recorded in `desk_incidents` within the same database
+transaction as the corresponding desk reading.
+
+Repeated observations of the same active fault update the existing incident,
+including its last observation time and observation count.
+
+A confirmed recovery clears the active incident. If the same fault appears
+again after recovery, a new incident is created.
+
+An uncertain reading does not establish recovery.
+
+When an incident is first recorded during an active group operation involving
+that desk, it is linked to the operation.
+
+Clearing an active fault does not automatically resolve its review state.
+
+Incident history is available through `GET /api/desk-incidents`.
+
+## Persistent operation results (S6-2)
+
+Group operation states and individual desk results are stored in
+`group_operations` and `group_operation_desks`.
+
+Dispatch intent is recorded before each movement command is sent.
+If the intent cannot be saved, the corresponding command is not sent.
+
+Unfinished operations are marked as `interrupted` and `needs_review` during
+startup recovery. Movement commands are never automatically resumed or retried.
+
+Saved operation results can be retrieved through:
+
+- `GET /api/group-operations/{operation_id}`
+- `GET /api/group-operations/history`
+
+The manager resolution workflow remains outside the scope of S6-2 and is
+handled separately in S6-3.
+
+See [S6-2 persistence](s6-2-persistence.md) for the database schema,
+persistence behaviour and startup recovery details.
