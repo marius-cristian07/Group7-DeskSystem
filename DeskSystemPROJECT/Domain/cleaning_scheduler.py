@@ -133,8 +133,10 @@ class CleaningScheduler:
                 reason = "Scheduled cleaning: raise desks" if action == "start" else "Scheduled cleaning: return desks"
                 operation = group_service.create(schedule["desk_ids"], height, reason=reason, automatic=True)
             except GroupOperationError:
-                # S5-1.create fails before a movement can be dispatched.
-                repository.set_run_status(run_id, status, "blocked")
+                # S5-1.create fails before a movement can be dispatched. After a refused raise
+                # nothing has moved. After a refused return the desks are still raised, so a
+                # person must review that run (S6-3).
+                repository.set_run_status(run_id, status, "blocked" if action == "start" else "needs_review")
                 continue
             except Exception:
                 repository.set_run_status(run_id, status, "needs_review")

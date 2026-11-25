@@ -1,6 +1,7 @@
 """Persistent storage for group operations and desk results."""
 
 from .database import transaction
+from .review_repository import lock_review_state
 
 
 _OPERATION_COLUMNS = (
@@ -79,6 +80,9 @@ def _upsert_desk(cursor, operation_id, desk):
 def save_operation(operation, desks=()):
     """Save an operation and its desk results in one transaction."""
     with transaction() as cursor:
+        # S6-3: a manager's resolution and an automatic cleaning start take this lock exclusively,
+        # so neither can commit while an operation for the same desks is being written.
+        lock_review_state(cursor, shared=True)
         _upsert_operation(cursor, operation)
 
         for desk in desks:

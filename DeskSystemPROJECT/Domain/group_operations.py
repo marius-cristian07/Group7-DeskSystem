@@ -58,6 +58,7 @@ ACTIVE_STATES = (PENDING_WARNING, COUNTDOWN, DISPATCHING, MONITORING)
 WARNING_STATES = (PENDING_WARNING, COUNTDOWN)  # the states in which cancelling still works
 REVIEW_NOT_REQUIRED = "not_required"
 REVIEW_NEEDED = "needs_review"
+REVIEW_RESOLVED = "resolved"
 _REVIEW_STATES = (PARTIAL_FAILURE, FAILED, INTERRUPTED)
 # ---------- result for one desk ----------
 
@@ -235,6 +236,7 @@ class _Operation:
     desks: Dict[str, _Desk] = field(default_factory=dict)
     block_code: Optional[str] = None
     block_message: Optional[str] = None
+    review_resolved: bool = False       # a manager has reviewed this failure (S6-3)
 
 
 @dataclass
@@ -851,11 +853,7 @@ class GroupOperationService:
             "finished_at": wall(operation.finished),
             "blocked_code": operation.block_code,
             "blocked_message": operation.block_message,
-            "review_state": (
-                REVIEW_NEEDED
-                if operation.state in _REVIEW_STATES
-                else REVIEW_NOT_REQUIRED
-            ),
+            "review_state": self._review_state(operation),
         }
 
     def _desk_row(self, operation, desk):
@@ -1214,12 +1212,25 @@ class GroupOperationService:
                 )
                 for desk in operation.desks.values()
             ),
-            review_state=(
-                REVIEW_NEEDED
-                if operation.state in _REVIEW_STATES
-                else REVIEW_NOT_REQUIRED
-            ),
+            review_state=self._review_state(operation),
         )
+
+    @staticmethod
+    def _review_state(operation):
+        if operation.state not in _REVIEW_STATES:
+            return REVIEW_NOT_REQUIRED
+        return REVIEW_RESOLVED if operation.review_resolved else REVIEW_NEEDED
+
+    def note_review_resolved(self, operation_ids):
+        """Remember in memory that the database now says these operations were reviewed.
+
+        The resolution itself is written by Data/review_repository.py. This only keeps the
+        live view from showing a resolved failure as unresolved."""
+        with self._lock:
+            for operation_id in operation_ids:
+                operation = self._operations.get(operation_id)
+                if operation is not None and operation.state in _REVIEW_STATES:
+                    operation.review_resolved = True
 
     def _view_from_rows(self, row, desk_rows):
         """Convert saved database rows into a historical operation."""
