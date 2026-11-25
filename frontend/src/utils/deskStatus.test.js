@@ -61,3 +61,7 @@ test('summarize counts each state and the total', () => {
   assert.deepEqual(summarize(desks), { total: 4, moving: 2, error: 1, idle: 1 });
   assert.deepEqual(summarize([]), { total: 0, moving: 0, error: 0, idle: 0 });
 });
+
+test('a reported overload blocks a desk even when its status text is Normal', () => {
+  assert.equal(getDeskState(desk({ health: 'faulty', fault_codes: ['overload_up'] })), DESK_STATE.ERROR);
+});

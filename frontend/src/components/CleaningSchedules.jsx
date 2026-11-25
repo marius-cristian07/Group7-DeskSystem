@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { saveCleaningSchedule, disableCleaningSchedule } from '../api/cleaning';
-import { useCleaningSchedules } from '../hooks/useCleaningSchedules';
 import { formatOccurrence, windowDescription } from '../utils/cleaningSchedule';
 import CleaningScheduleForm from './CleaningScheduleForm';
 import CleaningRunHistory from './CleaningRunHistory';
 import '../cleaning.css';
 
-export default function CleaningSchedules({ desks, desksUnavailable }) {
-  const { data, loading, error, refresh } = useCleaningSchedules();
+export default function CleaningSchedules({ desks, desksUnavailable, feed }) {
+  const { data, loading, error, refresh } = feed;
   // null closes the form and new opens it without an existing schedule
   const [editor, setEditor] = useState(null);
   const [busy, setBusy] = useState(false);

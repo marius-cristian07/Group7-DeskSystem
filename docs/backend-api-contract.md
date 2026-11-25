@@ -391,3 +391,11 @@ the other remains unchanged; it does not verify a live PostgreSQL write.
   Errors: 404 unknown, 409 not reviewable / desks not ready, 422 invalid input, 502 simulator, 503 database.
 - POST /api/desk-incidents/{incident_id}/acknowledge  Body: note, acknowledged_by (optional). Does not resolve.
 - GET /api/reviews/unresolved?desk_id=  and  GET /api/reviews/records?subject_type=&subject_id=&limit=
+
+## Saved desk catalogue (S6-4)
+
+`GET /api/stored-desks` reads desk identities from PostgreSQL independently of simulator availability.
+It returns `{"desks": [{"desk_id": "...", "name": "...", "last_reading_at": null}]}`.
+The timestamp is the most recent saved observation with a time zone, or null if there are no readings.
+An empty database returns an empty list. A database failure returns HTTP 503.
+The dashboard labels observations older than two minutes stale and uses the live API for current health.
