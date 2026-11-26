@@ -1,8 +1,10 @@
 # Pico W movement warning and connection indicator
 
-The connected Pico covers one shared warning area. Its red LED (GP10) and
+The connected Pico covers one shared warning area. Its red LED (GP7) and
 active-high buzzer input (GP20) pulse together every 250 ms. Connect the
-normally open button between GP7 and GND. A falling edge latches cancellation
+carrier board button on GP10. The current configuration expects high when pressed
+and low when released; verify this on the board before relying on cancellation.
+A rising edge latches cancellation
 even when the button is released during a quiet part of the blink cycle.
 
 ## Run a movement test

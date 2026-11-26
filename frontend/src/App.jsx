@@ -1,5 +1,8 @@
 // Keep group warnings mounted even while live desk readings are unavailable.
 
+import RecoveryPanel from './components/RecoveryPanel';
+import { useCleaningSchedules } from './hooks/useCleaningSchedules';
+import { useSavedResource } from './hooks/useSavedResource';
 import DeskDashboard from './components/DeskDashboard';
 import CleaningSchedules from './components/CleaningSchedules';
 import { useDesks } from './hooks/useDesks';
@@ -10,10 +13,13 @@ export default function App() {
   // These values update together when a request starts, succeeds, or fails.
   const { desks, loading, error, lastUpdated, refresh } = useDesks();
 
+  const catalogue = useSavedResource('/api/stored-desks');
+  const cleaning = useCleaningSchedules();
   return (
     <main className="app">
       <header className="app__header">
         <h1>Desk System</h1>
+        <a className="recovery-link" href="#recovery-title">Faults and recovery</a>
         {/* Keep the update time visible while a background refresh is running.
             lastUpdated distinguishes the first load from a background refresh. */}
         <p className="app__updated">
@@ -32,8 +38,9 @@ export default function App() {
       ) : !error && desks.length === 0 ? (
         <p className="notice" role="status">No desks are available.</p>
       ) : null}
-      <DeskDashboard desks={desks} lastUpdated={lastUpdated} />
-      <CleaningSchedules desks={desks} desksUnavailable={Boolean(error) || !lastUpdated} />
+      <DeskDashboard catalogue={catalogue} desks={desks} lastUpdated={lastUpdated} liveError={error} />
+      <RecoveryPanel catalogue={catalogue.data?.desks} liveError={error} lastUpdated={lastUpdated} desks={desks} runs={cleaning.data?.runs} />
+      <CleaningSchedules feed={cleaning} desks={desks} desksUnavailable={Boolean(error) || !lastUpdated} />
     </main>
   );
 }

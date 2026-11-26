@@ -72,7 +72,7 @@ function ReadingsPanel({ part, range }) {
     case 'unavailable':
       return (
         <Message error>
-          <strong>Height history is unavailable right now.</strong> The live details above still work.
+          <strong>Height history is unavailable right now.</strong>
           Select Refresh to try again.
           <span className="history__detail">{part.message}</span>
         </Message>
@@ -106,8 +106,7 @@ function CommandsPanel({ part, range }) {
     case 'unavailable':
       return (
         <Message error>
-          <strong>Movement requests are unavailable right now.</strong> The live details above still
-          work. Select Refresh to try again.
+          <strong>Movement requests are unavailable right now.</strong> Select Refresh to try again.
           <span className="history__detail">{part.message}</span>
         </Message>
       );

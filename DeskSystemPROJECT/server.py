@@ -27,7 +27,7 @@ from .Domain.desk_workflow import DeskWorkflow, WorkflowError
 from .Domain.desk_faults import classify_faults
 from .Data.database import DatabaseError
 from .Data.desk_command_repository import desk_exists
-from .Data.desk_history_repository import get_desk_readings, get_desk_commands
+from .Data.desk_history_repository import get_desk_readings, get_desk_commands, list_stored_desks
 from .Domain.group_operations import DeskBusyError, GroupOperationError, GroupOperationService, GroupOperationSettings, WARNING_STATES
 from .group_operations_api import get_group_service, router as group_operations_router
 from .movement_api import HeightRequest, HeightResponse
@@ -355,6 +355,15 @@ def format_desk(desk_record):
         "fault_codes": list(health.faults),
         "last_errors": desk_record["lastErrors"],
     }
+
+
+@app.get("/api/stored-desks")
+def stored_desk_catalogue():
+    """PostgreSQL identities and last saved timestamps for the offline history picker."""
+    try:
+        return {"desks": list_stored_desks()}
+    except DatabaseError:
+        raise HTTPException(503, "Database unavailable while loading stored desks") from None
 
 
 @app.get("/api/desks")
