@@ -4,6 +4,18 @@
 from .database import transaction
 
 
+def list_stored_desks():
+    """List saved identities, including desks with no readings, without contacting the simulator."""
+    with transaction() as cursor:
+        cursor.execute("""
+            SELECT d.desk_id, d.name,
+                   (SELECT max(recorded_at) FROM desk_readings WHERE desk_id = d.desk_id)
+            FROM desk AS d ORDER BY d.name, d.desk_id
+        """)
+        return [{"desk_id": desk_id, "name": name, "last_reading_at": observed}
+                for desk_id, name, observed in cursor.fetchall()]
+
+
 def get_desk_readings(desk_id, start=None, end=None, limit=50):
     """Retrieve saved readings and their errors, newest first."""
 

@@ -8,18 +8,11 @@ export const DESK_STATE = Object.freeze({
   IDLE: 'idle',
 });
 
-/**
- * True when the desk reports a problem right now.
- *
- * Only `status` and the anti-collision flag count. `last_errors` is a history
- * list, not a current fault: the simulator gives almost every desk at least one
- * old entry, so using it here would mark every desk as an error all the time.
- * Any status other than "Normal" is shown as an error, so a status value the
- * dashboard does not know about is never hidden.
- */
+// Prefer the backend's current classification. Historical errors never block movement.
 export function hasError(desk) {
   const status = String(desk.status ?? '').trim().toLowerCase();
-  return desk.is_anti_collision === true || status !== 'normal';
+  return (desk.health != null && desk.health !== 'healthy') || Boolean(desk.fault_codes?.length)
+    || desk.is_anti_collision === true || status !== 'normal';
 }
 
 /** Direction and speed from the signed `speed_mms` (positive = up, negative = down). */

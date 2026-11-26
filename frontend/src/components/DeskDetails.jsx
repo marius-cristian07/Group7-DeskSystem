@@ -8,6 +8,7 @@
 
 import { useEffect, useRef } from 'react';
 import { getDeskState, getMovement } from '../utils/deskStatus';
+import { hasError } from '../utils/deskStatus';
 import StateBadge from './StateBadge';
 import DeskHistory from './DeskHistory';
 import HeightControl from './HeightControl';
@@ -78,11 +79,7 @@ export default function DeskDetails({ deskId, desk, lastUpdated, onClose }) {
               </div>
             </dl>
 
-            <HeightControl key={deskId} desk={desk} />
-
-            {/* Saved history (S4-4). It loads on its own, so if the history service fails,
-                the live details above keep working. */}
-            <DeskHistory key={deskId} deskId={deskId} deskName={desk.name} />
+            {hasError(desk) ? <p>Movement unavailable while the desk reports a problem.</p> : <HeightControl key={deskId} desk={desk} />}
 
             <h3>Recent errors</h3>
             {desk.last_errors.length === 0 ? (
@@ -120,6 +117,7 @@ export default function DeskDetails({ deskId, desk, lastUpdated, onClose }) {
             connection to the backend was lost. They will appear here again when the desk reports in.
           </p>
         )}
+        <DeskHistory key={deskId} deskId={deskId} deskName={desk?.name || deskId} />
       </div>
     </dialog>
   );

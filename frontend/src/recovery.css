@@ -1,0 +1,17 @@
+.recovery { margin-block: 1.25rem; padding: 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: .75rem; overflow-wrap: anywhere }
+.recovery h2 { margin-top: 0 }
+.recovery nav, .review-pages { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-block: 1rem }
+.recovery button, .review-form :is(input, select, textarea) { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: .4rem; padding: .45rem .7rem }
+.recovery button, .recovery summary { cursor: pointer }
+.recovery button:disabled { cursor: default; opacity: .55 }
+.recovery button[aria-pressed=true] { border-color: var(--focus); color: var(--focus) }
+.review-entry { padding-block: .65rem; border-top: 1px solid var(--border) }
+.review-entry .review-toggle { text-align: left; width: 100% }
+.review-entry details, .review-form { margin-block: .75rem }
+.review-form fieldset { display: grid; gap: .7rem; max-width: 36rem; border: 1px solid var(--border); border-radius: .45rem }
+.review-form label, .stored-list li { display: grid; gap: .25rem }
+.review-form textarea { min-height: 4rem }
+.stored-list { padding: 0; display: grid; gap: .7rem }
+.stored-list button { justify-self: start }
+.recovery [role=alert] { color: var(--error-text) }
+.recovery-link { color: var(--focus) }

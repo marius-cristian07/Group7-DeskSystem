@@ -11,9 +11,10 @@ import { useGroupOperations } from '../hooks/useGroupOperations';
 import GroupHeightControl from './GroupHeightControl';
 import { WarningPanel, OperationProgress, isWarning, isMovingGroup } from './GroupOperations';
 import DeskCard from './DeskCard';
+import StoredDesks from './StoredDesks';
 import DeskDetails from './DeskDetails';
 
-export default function DeskDashboard({ desks, lastUpdated }) {
+export default function DeskDashboard({ catalogue, desks, lastUpdated, liveError }) {
   // Remember the ID, not the desk object: the object is replaced at every refresh.
   const [selectedId, setSelectedId] = useState(null);
   const [groupIds, setGroupIds] = useState([]);
@@ -67,6 +68,7 @@ export default function DeskDashboard({ desks, lastUpdated }) {
         ))}
       </ul>
       {offline.length > 0 && <p>{lastUpdated ? 'Offline' : 'Availability unconfirmed'}: {offline.map(id => `${names[id]} (${id})`).join(', ')}</p>}
+      <StoredDesks catalogue={catalogue} desks={desks} lastUpdated={lastUpdated} liveError={liveError} onSelect={setSelectedId} disabled={hasWarning} />
       <OperationProgress operations={feed.operations} names={names} />
 
       {selectedId !== null && !hasWarning && (

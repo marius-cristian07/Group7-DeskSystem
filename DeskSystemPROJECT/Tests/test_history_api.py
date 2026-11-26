@@ -45,6 +45,17 @@ class HistoryAPITests(unittest.TestCase):
             )
         )
 
+    def test_stored_catalogue_without_simulator_configuration(self):
+        rows = [{"desk_id": self.desk_id, "name": "Stored desk", "last_reading_at": None}]
+        with patch.dict(os.environ, {"DESK_API_KEY": ""}), patch(
+            "DeskSystemPROJECT.server.list_stored_desks", return_value=rows
+        ):
+            self.assertEqual(self.client.get("/api/stored-desks").json(), {"desks": rows})
+
+    def test_catalogue_database_failure_is_distinct_from_empty_history(self):
+        with patch("DeskSystemPROJECT.server.list_stored_desks", side_effect=DatabaseError("offline")):
+            self.assertEqual(self.client.get("/api/stored-desks").status_code, 503)
+
     def test_history_returns_readings_with_errors(self):
         self.readings.return_value = [
             {
