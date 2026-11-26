@@ -1,3 +1,9 @@
+"""
+Edited by : Edris Fiazi
+Edited on : 26.11.2026
+Purpose   : KAN-36 Test collision handling and historical errors for individual desk moves.
+"""
+
 # Checks show, sync, and move, including what happens when one step fails.
 # API, storage, and waiting are replaced with mocks to check results and call order.
 
@@ -54,6 +60,33 @@ class WorkflowTests(unittest.TestCase):
         self.commands.save_command.assert_called_once_with("desk-1", 1200, "accepted")
         self.sleep.assert_called_once_with(2)
         self.readings.save_desk.assert_called_once_with(self.record)
+
+    def test_single_move_reports_collision_even_at_target_height(self):
+        followup = sample_desk()
+        followup["state"]["isAntiCollision"] = True
+        self.api.get_desk.side_effect = [self.record, followup]
+
+        result = self.workflow.request_height("desk-1", 1320)
+
+        self.api.set_desk_height.assert_called_once()
+        self.assertTrue(result.at_target)
+        self.assertEqual(result.outcome, "desk_error")
+        self.assertIn("collision", result.fault_codes)
+        self.assertFalse(result.succeeded)
+        self.readings.save_desk.assert_called_once_with(followup)
+
+    def test_old_errors_allow_movement_and_new_history_is_saved(self):
+        followup = sample_desk()
+        new_error = {"time_s": 2700, "errorCode": 93}
+        followup["lastErrors"].insert(0, new_error)
+        self.api.get_desk.side_effect = [self.record, followup]
+
+        result = self.workflow.request_height("desk-1", 1320)
+
+        self.api.set_desk_height.assert_called_once()
+        self.assertEqual(result.outcome, "reached")
+        self.assertTrue(result.succeeded)
+        self.readings.save_desk.assert_called_once_with(followup)
 
     def test_failed_move_is_recorded_without_followup(self):
         self.api.set_desk_height.side_effect = DeskAPIError("rejected", status_code=400)
