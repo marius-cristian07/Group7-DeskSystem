@@ -55,7 +55,9 @@ class ServerTests(unittest.TestCase):
         expected = {
             "desk_id": record["desk_id"], "name": "DESK 4486",
             "position_mm": 1320, "speed_mms": 0, "status": "Normal",
-            "is_anti_collision": False, "last_errors": record["lastErrors"],
+            "is_anti_collision": False, "is_position_lost": False,
+            "is_overload_protection_up": False, "is_overload_protection_down": False,
+            "health": "healthy", "fault_codes": [], "last_errors": record["lastErrors"],
         }
         with patch("DeskSystemPROJECT.server.get_desk_ids", return_value=[record["desk_id"]]), \
              patch("DeskSystemPROJECT.server.get_desk", return_value=record):

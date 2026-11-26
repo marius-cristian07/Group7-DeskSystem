@@ -1,11 +1,18 @@
-"""S5-6 integration checks for the group warning and movement workflow.
+"""
+Edited by : Edris Fiazi
+Edited on : 26.11.2026
+Purpose   : KAN-36 Test Pico warning failures, cancellation, and collision handling for group moves.
+
+S5-6 integration checks for the group warning and movement workflow.
 
 These tests use a fake simulator/database boundary and an injected clock. They do
 not move physical desks or require PostgreSQL, a running simulator, or a Pico.
 """
 
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, call, patch
+
+import serial
 
 from DeskSystemPROJECT.Domain.group_operations import (
     BLOCKED,
@@ -17,6 +24,8 @@ from DeskSystemPROJECT.Domain.group_operations import (
     GroupOperationSettings,
     DeskBusyError,
 )
+
+from DeskSystemPROJECT.server import warn_before_movement
 
 
 class FakeClock:
@@ -171,6 +180,130 @@ class GroupOperationIntegrationTests(unittest.TestCase):
         self.assertEqual(result.state, "completed")
         self.assertEqual([desk.result for desk in result.desks], ["reached", "reached"])
         self.assertEqual(self.workflow.request_height.call_count, 2)
+
+    def create_automatic_with_dashboard_ack(self):
+        # Even a dashboard-only configuration must require the Pico for automatic moves.
+        self.service.settings = GroupOperationSettings(required_channels=("dashboard",))
+        operation = self.service.create(["desk-a"], 1000, automatic=True)
+        self.service.acknowledge(operation.operation_id, "dashboard")
+        return operation.operation_id
+
+    def test_automatic_move_is_blocked_when_pico_never_acknowledges(self):
+        operation_id = self.create_automatic_with_dashboard_ack()
+        self.clock.now = self.service.settings.ack_timeout_s
+        self.service.tick()
+
+        result = self.service.get(operation_id)
+        self.assertEqual(result.state, BLOCKED)
+        self.assertEqual(result.blocked_code, "warning_not_acknowledged")
+        self.assertEqual(result.desks[0].result, "not_sent")
+        self.spawn.assert_not_called()
+        self.workflow.request_height.assert_not_called()
+
+    def test_automatic_move_is_cancelled_if_usb_disconnects_during_warning(self):
+        operation_id = self.create_automatic_with_dashboard_ack()
+        port = Mock()
+        port.read_until.side_effect = [
+            f"ACTIVE {operation_id}\n".encode("ascii"),
+            serial.SerialException("USB disconnected"),
+        ]
+        stop_event = Mock()
+        stop_event.is_set.return_value = False
+
+        with self.assertRaises(serial.SerialException):
+            warn_before_movement(port, self.service, operation_id, stop_event)
+
+        port.write.assert_has_calls([
+            call(f"START {operation_id}\n".encode("ascii")),
+            call(f"POLL {operation_id}\n".encode("ascii")),
+        ])
+        self.assertEqual(self.service.get(operation_id).state, CANCELLED)
+        self.spawn.assert_not_called()
+        self.workflow.request_height.assert_not_called()
+
+    def test_automatic_move_requires_clear_for_the_same_operation(self):
+        operation_id = self.create_automatic_with_dashboard_ack()
+        port = Mock()
+        port.read_until.side_effect = [
+            f"ACTIVE {operation_id}\n".encode("ascii"),
+            b"CLEAR another-operation\n",
+        ]
+        stop_event = Mock()
+        stop_event.is_set.return_value = False
+
+        def finish_countdown(_seconds):
+            self.clock.now = self.service.settings.countdown_s
+
+        stop_event.wait.side_effect = finish_countdown
+
+        # Let START receive ACTIVE, then let FINISH time out after the unrelated CLEAR.
+        with patch("DeskSystemPROJECT.server.time") as serial_time:
+            serial_time.monotonic.side_effect = [0, 0, 0, 0, 1]
+            with self.assertRaisesRegex(serial.SerialException, "No reply"):
+                warn_before_movement(port, self.service, operation_id, stop_event)
+
+        port.write.assert_has_calls([
+            call(f"START {operation_id}\n".encode("ascii")),
+            call(f"FINISH {operation_id}\n".encode("ascii")),
+        ])
+        self.assertEqual(self.service.get(operation_id).state, CANCELLED)
+        self.spawn.assert_not_called()
+        self.workflow.request_height.assert_not_called()
+
+    def test_automatic_move_handles_pico_button_and_clear_after_countdown(self):
+        for reply, expected_state in (("CANCEL", CANCELLED), ("CLEAR", DISPATCHING)):
+            with self.subTest(reply=reply):
+                self.spawn.reset_mock()
+                operation_id = self.create_automatic_with_dashboard_ack()
+                port = Mock()
+                port.read_until.side_effect = [
+                    f"ACTIVE {operation_id}\n".encode("ascii"),
+                    f"{reply} {operation_id}\n".encode("ascii"),
+                ]
+                stop_event = Mock()
+                stop_event.is_set.return_value = False
+
+                def finish_countdown(_seconds):
+                    self.clock.now += self.service.settings.countdown_s
+
+                stop_event.wait.side_effect = finish_countdown
+                warn_before_movement(port, self.service, operation_id, stop_event)
+
+                port.write.assert_called_with(f"FINISH {operation_id}\n".encode("ascii"))
+                self.assertEqual(self.service.get(operation_id).state, expected_state)
+                if reply == "CLEAR":
+                    self.spawn.assert_called_once()
+                else:
+                    self.spawn.assert_not_called()
+                    self.workflow.request_height.assert_not_called()
+
+    def test_group_move_reports_collision_even_at_target_height(self):
+        from DeskSystemPROJECT.Domain.desk_workflow import MoveResult
+
+        operation = self.create()
+        self.acknowledge_both(operation.operation_id)
+        self.clock.now = 10
+        self.service.finish_pico_warning(operation.operation_id)
+
+        self.workflow.request_height.return_value = MoveResult(
+            "desk-a", 1000, "accepted", accepted_mm=1000, command_id=11,
+        )
+        self.workflow.api.get_desk.side_effect = [
+            {"state": {"status": "Normal"}},
+            {"state": {
+                "status": "Normal", "position_mm": 1000, "speed_mms": 0,
+                "isAntiCollision": True,
+            }},
+        ]
+        worker, operation_id = self.spawn.call_args.args
+        worker(operation_id)
+
+        self.workflow.request_height.assert_called_once_with("desk-a", 1000)
+        result = self.service.get(operation_id)
+        self.assertEqual(result.state, "failed")
+        self.assertEqual(result.desks[0].result, "desk_error")
+        self.assertTrue(result.desks[0].at_target)
+        self.assertIn("collision", result.desks[0].fault_codes)
 
     def test_partial_failure_is_reported_per_desk(self):
         from DeskSystemPROJECT.Domain.desk_workflow import MoveResult

@@ -46,6 +46,8 @@ class MovementAPITests(unittest.TestCase):
             "accepted_position_mm": 950, "command_id": 8,
             "status": "accepted", "error": None, "recording_error": None,
             "follow_up_error": None, "reading_id": 7,
+            "movement_outcome": "moving", "fault_codes": [],
+            "last_position_mm": 1320, "last_speed_mms": 0, "at_target": False,
         })
         self.api.set_desk_height.assert_called_once_with("http://simulator.test", "key", "desk-1", 1000)
         self.commands.save_command.assert_called_once_with("desk-1", 1000, "accepted")
